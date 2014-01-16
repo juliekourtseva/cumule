@@ -443,11 +443,20 @@ class Cumule():
 			for i in range(PHASE_1_LENGTH):
 				self.timestep+=1
 				
+				if self.timestep==FLAGS.timelimit+1 and FLAGS.timelimit!=-1:
+					if min_archive_error==1000:
+						return -1
+					else:
+						return min_archive_error
+				elif FLAGS.timelimit==-1 and min_archive_error!=1000:
+					return min_archive_error 
+
 				logfile.write("Timestep:"+str(i)+"\n")
 				
 				m = self.agent.getRandomMotor() 
 				s = self.world.resetState(m)
-				
+
+
 				# Archive evaluating
 				if self.agent.archive.count(0)==0:				
 					if archive_changed==True:
@@ -456,8 +465,8 @@ class Cumule():
 							logfile.write("New achieved archive error: "+str(new_error)+"\n")
 							min_archive_error=new_error
 							
-					if (i>=FLAGS.timelimit or FLAGS.timelimit==-1):
-						return min_archive_error
+					# if (i>=FLAGS.timelimit or FLAGS.timelimit==-1):
+					# 	return min_archive_error
 					
 					archive_changed=False
 
@@ -592,6 +601,7 @@ if __name__ == '__main__':
 	parser = argparse.ArgumentParser()
 	parser.add_argument("timelimit",default=50,type=int)
 	parser.add_argument("-n","--num_predictors",help="population size(default:50)",default=50,type=int)
+	parser.add_argument("--runs",help="number of runs(default:1)",default=1,type=int)
 	parser.add_argument("-ts","--test_set_length",help="test set length(default:50)",default=50,type=int)
 	parser.add_argument("-e","--evolution_period", help="evolution period(default:10)", type=int, default=10)
 	parser.add_argument("-a","--archive_threshold", help="threshold for getting into the archive(default: 0.02)", type=float, default=0.02)
@@ -605,9 +615,26 @@ if __name__ == '__main__':
 	parser.add_argument("--sliding_training", help="use sliding window of examples", action="store_true",default=False)
 	FLAGS=parser.parse_args()
 
+	avg=0.0
+	errs=[]
 
-	c = Cumule()
-	print c.run()
+	for i in range(FLAGS.runs):
+		c = Cumule()
+		result=c.run()
+		tries=0
+		while result==-1 and tries<10:
+			result=c.run() # we need to get those N runs
+			tries+=1
+		
+		if result==-1:
+			print "Couldn't find a solution for one of the runs in "+str(tries)+" tries. Something is clearly wrong."
+		else:
+			errs.append(result)
+			print result
+	print "Average: "+str(np.mean(errs))
+	print "Standard deviation: "+str(np.std(errs))
+	print "Min: "+str(np.min(errs))
+	print "Max: "+str(np.max(errs))
 
 	if FLAGS.show_test_error:
 		c.test_archive()
