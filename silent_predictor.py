@@ -111,17 +111,18 @@ class Predictor():
 		
 		new_ds=deepcopy(self.ds)
 
-		# if len(self.previousData)!=0:
-		# 	for sample,target in self.previousData:
-		# 		new_ds.addSample(sample,target)
+		if FLAGS.sliding_training:
+			if len(self.previousData)!=0:
+				for sample,target in self.previousData:
+					new_ds.addSample(sample,target)
 		
-		# print "training with..."+str(len(new_ds))
 
 		self.trainer.setData(new_ds)
-		for i in range(5):
+		for i in range(FLAGS.epochs):
 			e = self.trainer.train()
-			#print e
-		# self.previousData=deepcopy(self.ds)
+		
+		if FLAGS.sliding_training:
+			self.previousData=deepcopy(self.ds)
 
 		#Update possible fitness indicators. 
 		#Error now
@@ -387,11 +388,8 @@ class Cumule():
 			
 			for t in range(FLAGS.test_set_length):#*********************************************
 
-				#Execute random motor command 
 				m = self.agent.getRandomMotor()
-				#Get s(t+1) after executing this motor command in the world 
 				stp1 = self.world.updateState(m)
-				#Store the data in each predictors memory 
 				inp = np.concatenate((s,m), axis = 0)
 				s = stp1
 	
@@ -471,14 +469,12 @@ class Cumule():
 						if min_archive_error>new_error:
 							logfile.write("New achieved archive error: "+str(new_error)+"\n")
 							min_archive_error=new_error
-							
-					# if (i>=FLAGS.timelimit or FLAGS.timelimit==-1):
-					# 	return min_archive_error
 					
 					archive_changed=False
 
 				distr=self.agent.problemsDistribution()
 				
+				# Check if there's a candidate solution in population
 				if i!=0:
 					bestEfforts=self.agent.minErrors(distr)
 					for problem, error, predictor in bestEfforts:
@@ -509,7 +505,7 @@ class Cumule():
 					m = self.agent.getRandomMotor()
 					stp1 = self.world.updateState(m)
 					inp = np.concatenate((s,m), axis = 0)
-					self.agent.storeDataPoint(inp, stp1) #Stores data in each predictor of the agent. 
+					self.agent.storeDataPoint(inp, stp1) 
 
 					s = stp1
 
@@ -609,6 +605,7 @@ if __name__ == '__main__':
 	parser.add_argument("timelimit",default=50,type=int)
 	parser.add_argument("-n","--num_predictors",help="population size(default:50)",default=50,type=int)
 	parser.add_argument("--runs",help="number of runs(default:1)",default=1,type=int)
+	parser.add_argument("--epochs",help="number of epochs for each training(default:5)",default=5,type=int)
 	parser.add_argument("-ts","--test_set_length",help="test set length(default:50)",default=50,type=int)
 	parser.add_argument("-e","--evolution_period", help="evolution period(default:10)", type=int, default=10)
 	parser.add_argument("-a","--archive_threshold", help="threshold for getting into the archive(default: 0.02)", type=float, default=0.02)
