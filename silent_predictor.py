@@ -339,15 +339,15 @@ class Agent():
 
 			if FLAGS.mutate_input:
 				for i in range(len(self.predictors[loser].inputMask)):
-					if random.uniform(0,1) < MUTATE_MASK_PROBABILITY:
+					if random.uniform(0,1) < FLAGS.input_mutation_prob:
 						if self.predictors[loser].inputMask[i] == 0:
 							self.predictors[loser].inputMask[i] = 1
 						else:
 							self.predictors[loser].inputMask[i] = 0
 
-			if random.uniform(0,1) < MUTATE_MASK_PROBABILITY:
+			if random.uniform(0,1) < FLAGS.output_mutation_prob:
 				self.predictors[loser].outputMask = [0]*NUM_DIMENSIONS
-				r = np.random.choice(range(NUM_DIMENSIONS),p=distribution) #random.randint(0,NUM_DIMENSIONS-1)
+				r = np.random.choice(range(NUM_DIMENSIONS),p=distribution)
 				self.predictors[loser].outputMask[r] = 1
 				self.predictors[loser].problem=r
 
@@ -617,6 +617,8 @@ if __name__ == '__main__':
 	parser.add_argument("--show_test_error", help="test archive and show the plot", action="store_true",default=False)
 	parser.add_argument("--show_plots", help="show live plots", action="store_true",default=False)
 	parser.add_argument("--sliding_training", help="use sliding window of examples", action="store_true",default=False)
+	parser.add_argument("--input_mutation_prob", help="input mutation probability per bit(default: 0.05)", type=float, default=0.05)
+	parser.add_argument("--output_mutation_prob", help="output mutation probability per mask(default: 0.9)", type=float, default=0.9)
 	FLAGS=parser.parse_args()
 
 	avg=0.0
