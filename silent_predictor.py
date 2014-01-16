@@ -24,11 +24,31 @@ PHASE_1_LENGTH = 100000
 
 # EVOLUTION_PERIOD = 2 #Evolve predictors every 10 episodes. 
 WEIGHT_DECAY=0.1
-MUTATE_MASK_PROBABILITY = 0.9
+# MUTATE_MASK_PROBABILITY = 0.9
 BACKTIME=10
 PREDICTOR_MUTATION_PROBABILITY=0.8
-WEIGHT_COPY_PROBABILITY=0.05
+# WEIGHT_COPY_PROBABILITY=0.05
 
+parser = argparse.ArgumentParser()
+parser.add_argument("timelimit",default=50,type=int)
+parser.add_argument("-n","--num_predictors",help="population size(default:50)",default=50,type=int)
+parser.add_argument("--runs",help="number of runs(default:1)",default=1,type=int)
+parser.add_argument("--epochs",help="number of epochs for each training(default:5)",default=5,type=int)
+parser.add_argument("-ts","--test_set_length",help="test set length(default:50)",default=50,type=int)
+parser.add_argument("-e","--evolution_period", help="evolution period(default:10)", type=int, default=10)
+parser.add_argument("-a","--archive_threshold", help="threshold for getting into the archive(default: 0.02)", type=float, default=0.02)
+parser.add_argument("-lr","--learning_rate", help="learning rate for predictors(default: 0.01)", type=float, default=0.01)
+parser.add_argument("-r","--replication", help="enable weights replication(default: no)",action="store_true", default=False)
+parser.add_argument("-lg","--logfile", help="log file name(default: prediction.log)",type=str, default="prediction.log")
+parser.add_argument("-i","--mutate_input", help="enable input mask mutation(default: yes)",action="store_true", default=True)
+parser.add_argument("--episode_length", help="number of samples per episode(default: 50)",action="store_true", default=10)
+parser.add_argument("--show_test_error", help="test archive and show the plot", action="store_true",default=False)
+parser.add_argument("--show_plots", help="show live plots", action="store_true",default=False)
+parser.add_argument("--sliding_training", help="use sliding window of examples", action="store_true",default=False)
+parser.add_argument("--input_mutation_prob", help="input mutation probability per bit(default: 0.05)", type=float, default=0.05)
+parser.add_argument("--output_mutation_prob", help="output mutation probability per mask(default: 0.9)", type=float, default=0.9)
+parser.add_argument("--replication_prob", help="weight copy probability per weight(default: 0.1)", type=float, default=0.1)
+parser.add_argument("--predictor_mutation_prob", help="tournament loser mutation probability(default: 1)", type=float, default=1.0)
 
 
 
@@ -69,6 +89,9 @@ class World():
 
 		def getState(self):
 			return self.s
+
+		def getRandomMotor(self):
+			return [random.uniform(0,1), random.uniform(0,1)]
 
 class Predictor(): 
 
@@ -332,7 +355,7 @@ class Agent():
 			
 			if FLAGS.replication:
 				for i in range(len(self.predictors[loser].net.params)):
-					if random.uniform(0,1)<WEIGHT_COPY_PROBABILITY:
+					if random.uniform(0,1)<FLAGS.replication_prob:
 						self.predictors[loser].net.params[i] = self.predictors[winner].net.params[i]
 			
 			# self.predictors[loser].net._setParameters(self.predictors[loser].net.params) # why?
@@ -500,6 +523,7 @@ class Cumule():
 									self.agent.archive[problem]=old_predictor
 
 
+				# training of predictors
 				for t in range(FLAGS.episode_length):#*********************************************
 
 					m = self.agent.getRandomMotor()
@@ -576,7 +600,7 @@ class Cumule():
 						winner = b
 						loser = a 
 
-					if random.uniform(0,1) < PREDICTOR_MUTATION_PROBABILITY:
+					if random.uniform(0,1) < FLAGS.predictor_mutation_prob:
 						self.agent.copyAndMutatePredictor(winner, loser, self.agent.problemsMutationProbabilities(self.agent.problemsDistribution()))
 
 					# fig=subplot(5,2,1)
@@ -600,26 +624,13 @@ class Cumule():
 
 if __name__ == '__main__':
 	ion()
-	
-	parser = argparse.ArgumentParser()
-	parser.add_argument("timelimit",default=50,type=int)
-	parser.add_argument("-n","--num_predictors",help="population size(default:50)",default=50,type=int)
-	parser.add_argument("--runs",help="number of runs(default:1)",default=1,type=int)
-	parser.add_argument("--epochs",help="number of epochs for each training(default:5)",default=5,type=int)
-	parser.add_argument("-ts","--test_set_length",help="test set length(default:50)",default=50,type=int)
-	parser.add_argument("-e","--evolution_period", help="evolution period(default:10)", type=int, default=10)
-	parser.add_argument("-a","--archive_threshold", help="threshold for getting into the archive(default: 0.02)", type=float, default=0.02)
-	parser.add_argument("-lr","--learning_rate", help="learning rate for predictors(default: 0.01)", type=float, default=0.01)
-	parser.add_argument("-r","--replication", help="enable weights replication(default: no)",action="store_true", default=False)
-	parser.add_argument("-lg","--logfile", help="log file name(default: prediction.log)",type=str, default="prediction.log")
-	parser.add_argument("-i","--mutate_input", help="enable input mask mutation(default: yes)",action="store_true", default=True)
-	parser.add_argument("--episode_length", help="number of samples per episode(default: 50)",action="store_true", default=10)
-	parser.add_argument("--show_test_error", help="test archive and show the plot", action="store_true",default=False)
-	parser.add_argument("--show_plots", help="show live plots", action="store_true",default=False)
-	parser.add_argument("--sliding_training", help="use sliding window of examples", action="store_true",default=False)
-	parser.add_argument("--input_mutation_prob", help="input mutation probability per bit(default: 0.05)", type=float, default=0.05)
-	parser.add_argument("--output_mutation_prob", help="output mutation probability per mask(default: 0.9)", type=float, default=0.9)
+
 	FLAGS=parser.parse_args()
+
+
+	fl=vars(FLAGS)
+	for k in sorted(fl.iterkeys()):
+		print k+": "+str(fl[k])
 
 	avg=0.0
 	errs=[]
