@@ -195,8 +195,13 @@ class Agent():
 			r=[]
 
 			for problem, predictors in enumerate(distr):
-				error=min([p.error for p in predictors])
+				if len(predictors)>0:
+					error=min([p.error for p in predictors])
+				else:
+					error=5
+
 				r.append(error)	
+
 
 			return r
 
@@ -253,6 +258,8 @@ class Agent():
 			for k,v in enumerate(r):
 				if self.archive[k]==0:
 					r[k]=max_err*5
+				if v<0:
+					r[k]=max_err*3
 
 			
 			r=np.divide(r,sum(r))
