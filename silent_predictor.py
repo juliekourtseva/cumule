@@ -97,16 +97,24 @@ class Predictor():
 
 	def __init__(self, inSize, outSize, LearningRate):
 
+		self.inputMask = [random.randint(0, 1) for i in range(inSize)]
+		self.inSize=self.inputMask.count(1)
+
+		if self.inSize==0:
+			self.inputMask[random.randint(0,inSize)]=1
+			self.inSize=1
+		
+		self.outSize=1
+
 		self.learning_rate = LearningRate
-		self.ds = SupervisedDataSet(inSize, outSize)
-		self.net = buildNetwork(inSize, 10, outSize, hiddenclass=TanhLayer, bias=True)
+		self.ds = SupervisedDataSet(self.inSize, self.outSize)
+		self.net = buildNetwork(self.inSize, self.inSize+1, self.outSize, hiddenclass=TanhLayer, bias=True)
 		self.trainer = BackpropTrainer(self.net, self.ds, learningrate=self.learning_rate, verbose = False, weightdecay=WEIGHT_DECAY)
-		self.prediction = [0] * outSize
+		self.prediction = [0] * self.outSize
 		self.mse = 100
 		self.age=0
 
 		#Specific to Mai's code. Make input and output masks.  
-		self.inputMask = [1 for i in range(inSize)]
 		
 #		self.outputMask = [random.randint(0, 1) for i in range(outSize)]
 		self.outputMask = [0]*outSize
@@ -138,7 +146,6 @@ class Predictor():
 			if len(self.previousData)!=0:
 				for sample,target in self.previousData:
 					new_ds.addSample(sample,target)
-		
 
 		self.trainer.setData(new_ds)
 		for i in range(FLAGS.epochs):
@@ -186,8 +193,17 @@ class Predictor():
 	def storeDataPoint(self, inputA, targetA):
 		self.ds.addSample(inputA, targetA)
 
+	def getInput(self,raw):
+		inputA = []
+		for j in range(len(raw)):
+			if self.inputMask[j]==1:
+				inputA.append(raw[j])
+		return inputA
+
 	def predict(self,inputA):
-		return self.net.activate(inputA)
+		r=[0]*len(self.inputMask)
+		r[self.problem]=self.net.activate(self.getInput(inputA))
+		return r
 
 
 class Agent(): 
@@ -206,15 +222,6 @@ class Agent():
 				r[predictor.problem].append(predictor)
 			return r
 
-		def averageErrors(self,distr):
-			r=[]
-
-			for problem, predictors in enumerate(distr):
-				error=np.mean([p.error for p in predictors])
-				r.append(error)	
-
-			return r
-
 		def minimumErrors(self,distr):
 			r=[]
 
@@ -228,33 +235,6 @@ class Agent():
 
 
 			return r
-
-		def bestSolved(self,distr):
-			min_error=10000000000
-			best_solved=-1
-			best_predictor=-1
-			for problem, predictors in enumerate(distr):
-				if len(predictors)!=0:
-					errors=[p.error for p in predictors]
-					best=np.argmin(errors)
-					err=errors[best]
-					if err<min_error:
-						best_solved=problem
-						min_error=err
-						best_predictor=predictors[best]
-			return (best_solved,min_error,best_predictor)
-
-
-		def bestSolvingSpeed(self,distr):
-			min_speed=100000000
-			fastest=-1
-			for problem, predictors in enumerate(distr):
-				if len(predictors)!=0:
-					speed=min([p.dError for p in predictors])
-					if speed<min_speed and speed<0:
-						fastest=problem
-						min_speed=speed
-			return (fastest,min_speed)
 
 		# execute this AFTER storing into archive and BEFORE new training
 		def problemsMutationProbabilities(self,distr):
@@ -313,14 +293,15 @@ class Agent():
 
 			for i in range(FLAGS.num_predictors):
 				#APPLY INPUT AND OUTPUT MASKS BEFORE SENDING DATA TO PREDICTORS. 
-				inputA = [0]*len(inp)
+				inputA = []
 				for j in range(len(inp)):
-					inputA[j] = inp[j]*self.predictors[i].inputMask[j]
-				target = [0]*len(targ)
-				for j in range(len(targ)):
-					target[j] = targ[j]*self.predictors[i].outputMask[j]
+					if self.predictors[i].inputMask[j]==1:
+						inputA.append(inp[j])
+				# target = [0]*len(targ)
+				# for j in range(len(targ)):
+				# 	target[j] = targ[j]*self.predictors[i].outputMask[j]
 
-				self.predictors[i].storeDataPoint(inputA, target)
+				self.predictors[i].storeDataPoint(inputA, targ[self.predictors[i].problem])
 
 		def trainPredictors(self):
 			ep = []
@@ -345,34 +326,41 @@ class Agent():
 
 		def copyAndMutatePredictor(self, winner, loser,distribution):
 			newLoser = deepcopy(self.predictors[winner])
-			self.predictors[loser] = newLoser
-
-			self.predictors[loser].learning_rate =  FLAGS.learning_rate
-			self.predictors[loser].ds = SupervisedDataSet(10, 8)
-			self.predictors[loser].net = buildNetwork(10,10,8, bias=True)
-			self.predictors[loser].trainer = BackpropTrainer(self.predictors[loser].net, self.predictors[loser].ds, learningrate=self.predictors[loser].learning_rate, verbose = False, weightdecay=WEIGHT_DECAY)
-		
-			
-			if FLAGS.replication:
-				for i in range(len(self.predictors[loser].net.params)):
-					if random.uniform(0,1)<FLAGS.replication_prob:
-						self.predictors[loser].net.params[i] = self.predictors[winner].net.params[i]
-			
-			# self.predictors[loser].net._setParameters(self.predictors[loser].net.params) # why?
 
 			if FLAGS.mutate_input:
-				for i in range(len(self.predictors[loser].inputMask)):
+				for i in range(len(newLoser.inputMask)):
 					if random.uniform(0,1) < FLAGS.input_mutation_prob:
-						if self.predictors[loser].inputMask[i] == 0:
-							self.predictors[loser].inputMask[i] = 1
+						if newLoser.inputMask[i] == 0:
+							newLoser.inputMask[i] = 1
 						else:
-							self.predictors[loser].inputMask[i] = 0
+							newLoser.inputMask[i] = 0
+				
+				if newLoser.inputMask.count(1)==0:
+					newLoser.inputMask[random.randint(0,len(newLoser.inputMask))]=1
+				
+				newLoser.inSize=newLoser.inputMask.count(1)
+
+
+
+			newLoser.learning_rate =  FLAGS.learning_rate
+			newLoser.ds = SupervisedDataSet(newLoser.inSize, 1)
+			newLoser.net = buildNetwork(newLoser.inSize,newLoser.inSize+1,1, bias=True)
+			newLoser.trainer = BackpropTrainer(newLoser.net, newLoser.ds, learningrate=newLoser.learning_rate, verbose = False, weightdecay=WEIGHT_DECAY)
+
+			
+			if FLAGS.replication:
+				for i in range(len(newLoser.net.params)):
+					if random.uniform(0,1)<FLAGS.replication_prob:
+						newLoser.net.params[i] = self.predictors[winner].net.params[i]
+			
 
 			if random.uniform(0,1) < FLAGS.output_mutation_prob:
-				self.predictors[loser].outputMask = [0]*NUM_DIMENSIONS
+				newLoser.outputMask = [0]*NUM_DIMENSIONS
 				r = np.random.choice(range(NUM_DIMENSIONS),p=distribution)
-				self.predictors[loser].outputMask[r] = 1
-				self.predictors[loser].problem=r
+				newLoser.outputMask[r] = 1
+				newLoser.problem=r
+
+			self.predictors[loser]=newLoser
 
 class Cumule():
 		def __init__(self):
@@ -381,25 +369,6 @@ class Cumule():
 			self.agent = Agent()
 			self.popFitHistory=np.ndarray((FLAGS.num_predictors,BACKTIME))*0
 			self.timestep=0
-
-		def plot_fitness(self,fig):
-			popFit = []
-			for i in range(FLAGS.num_predictors):
-				popFit.append(self.agent.predictors[i].fitness)
-			
-			self.popFitHistory=np.roll(self.popFitHistory,-1,axis=1)
-			self.popFitHistory[:,BACKTIME-1]=popFit
-
-			fig.clear()
-			for i in range(FLAGS.num_predictors):
-				fig.plot(self.popFitHistory[i,:])
-
-			x=self.timestep-(self.timestep%BACKTIME)
-			x=range(x,self.timestep+(self.timestep%BACKTIME))
-			fig.xaxis.set_ticks(np.arange(0, BACKTIME, 2.0))
-			# fig.xaxis.set_ticklabels(x)
-			xlabel('generations')
-			ylabel('fitness')
 
 		def test_archive(self):
 			plots=np.ndarray((NUM_DIMENSIONS,FLAGS.test_set_length,2))*0
@@ -491,6 +460,10 @@ class Cumule():
 						new_error=self.archive_error(FLAGS.test_set_length, range(NUM_DIMENSIONS))
 						if min_archive_error>new_error:
 							logfile.write("New achieved archive error: "+str(new_error)+"\n")
+							logfile.write("Input sizes of new archive:"+", ".join([str(p.inSize) for p in self.agent.archive])+"\n")
+							logfile.write("Input masks: \n")
+							for p in self.agent.archive:
+								logfile.write(",".join(map(str,p.inputMask))+"\n")
 							min_archive_error=new_error
 					
 					archive_changed=False
