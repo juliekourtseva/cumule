@@ -16,10 +16,9 @@ from pybrain.datasets import SupervisedDataSet
 from pybrain.structure import TanhLayer, LinearLayer
 from pybrain.tools.validation import ModuleValidator
 
+
 #5th January 2014. Cumule Algorithm (Chrisantha Fernando)
 
-NUM_DIMENSIONS = 8 
-NUM_MOTORS = 2
 PHASE_1_LENGTH = 100000
 
 # EVOLUTION_PERIOD = 2 #Evolve predictors every 10 episodes. 
@@ -50,48 +49,9 @@ parser.add_argument("--output_mutation_prob", help="output mutation probability 
 parser.add_argument("--replication_prob", help="weight copy probability per weight(default: 0.1)", type=float, default=0.1)
 parser.add_argument("--predictor_mutation_prob", help="tournament loser mutation probability(default: 1)", type=float, default=1.0)
 
+from world import World	
 
 
-class World(): 
-		def __init__(self):
-
-			#Create world data structures 
-			self.s = [0]*NUM_DIMENSIONS    #CURRENT STATE 
-			self.stp1 = [0]*NUM_DIMENSIONS #TEMPORARY STATE. 
-
-		def resetState(self, m):
-			self.s = [0]*NUM_DIMENSIONS    #CURRENT STATE 
-			s = self.updateState(m)
-			return s
-
-		def updateState(self, m):
-
-			#Update each state in this weird and impenetrable manner. 
-			self.stp1[0] = math.cos(self.s[0] + m[0])
-			self.stp1[1] = math.cos(self.s[1] + m[1])
-			p0 = pow(self.s[0],2)
-			p1 = pow(self.s[1],2)
-			p2 = pow(self.s[2],2)
-			p3 = pow(self.s[3],2)
-			p4 = pow(self.s[4],2)
-			self.stp1[2] = math.cos(p1 + p3 + p4 + pow(m[1],2) ) #Is there a mistake here Mai?
-			self.stp1[3] = math.cos(self.s[0] + self.s[1])
-			self.stp1[4] = math.cos(m[0] + m[1])
-			self.stp1[5] = p2 + p3 + p4
-			self.stp1[6] = p0 + p1 + p2
-			self.stp1[7] = pow(m[0], 2) + p3 + p4
-
-			#Set s to s(t+1)
-			for i in range(NUM_DIMENSIONS):
-				self.s[i] = self.stp1[i]
-
-			return self.s
-
-		def getState(self):
-			return self.s
-
-		def getRandomMotor(self):
-			return [random.uniform(0,1), random.uniform(0,1)]
 
 class Predictor(): 
 
@@ -195,13 +155,13 @@ class Agent():
 
 			#The agent has a population of M predictors. 
 			self.predictors = []
-			self.archive=[0 for i in range(NUM_DIMENSIONS)]
+			self.archive=[0 for i in range(World.state_size)]
 			for i in range(FLAGS.num_predictors):
-				p=Predictor(NUM_DIMENSIONS + NUM_MOTORS,NUM_DIMENSIONS, FLAGS.learning_rate)
+				p=Predictor(World.state_size + World.action_size,World.state_size, FLAGS.learning_rate)
 				self.predictors.append(p)
 
 		def problemsDistribution(self):
-			r=[[] for i in range(NUM_DIMENSIONS)]
+			r=[[] for i in range(World.state_size)]
 			for predictor in self.predictors:
 				r[predictor.problem].append(predictor)
 			return r
@@ -330,9 +290,9 @@ class Agent():
 			return ep
 
 		def createPredictor(self,hiddenLayerSize,problem):
-			p=Predictor(NUM_DIMENSIONS + NUM_MOTORS,NUM_DIMENSIONS, FLAGS.learning_rate)
+			p=Predictor(World.state_size + World.action_size,World.state_size, FLAGS.learning_rate)
 			p.problem=problem
-			p.outputMask = [0]*NUM_DIMENSIONS
+			p.outputMask = [0]*World.state_size
 			p.outputMask[problem]=1
 
 			return p
@@ -369,8 +329,8 @@ class Agent():
 							self.predictors[loser].inputMask[i] = 0
 
 			if random.uniform(0,1) < FLAGS.output_mutation_prob:
-				self.predictors[loser].outputMask = [0]*NUM_DIMENSIONS
-				r = np.random.choice(range(NUM_DIMENSIONS),p=distribution)
+				self.predictors[loser].outputMask = [0]*World.state_size
+				r = np.random.choice(range(World.state_size),p=distribution)
 				self.predictors[loser].outputMask[r] = 1
 				self.predictors[loser].problem=r
 
@@ -402,7 +362,7 @@ class Cumule():
 			ylabel('fitness')
 
 		def test_archive(self):
-			plots=np.ndarray((NUM_DIMENSIONS,FLAGS.test_set_length,2))*0
+			plots=np.ndarray((World.state_size,FLAGS.test_set_length,2))*0
 
 			#Generate random initial motor command between -1 and 1. 
 			m = self.agent.getRandomMotor()
@@ -416,13 +376,13 @@ class Cumule():
 				inp = np.concatenate((s,m), axis = 0)
 				s = stp1
 	
-				for i in range(NUM_DIMENSIONS):
+				for i in range(World.state_size):
 					predicted=self.agent.archive[i].predict(inp)
 					expected=stp1
 					plots[i,t]=[predicted[i], expected[i]]
 			
 			figure()
-			for i in range(NUM_DIMENSIONS):
+			for i in range(World.state_size):
 				subplot(4,2,i)
 				title("Problem #"+str(i))
 				plot(plots[i,:,:])
@@ -441,7 +401,7 @@ class Cumule():
 
 				s = stp1
 
-				predicted=np.ndarray(NUM_DIMENSIONS)
+				predicted=np.ndarray(World.state_size)
 				expected=stp1
 	
 				for i in dims:
@@ -488,7 +448,7 @@ class Cumule():
 				# Archive evaluating
 				if self.agent.archive.count(0)==0:				
 					if archive_changed==True:
-						new_error=self.archive_error(FLAGS.test_set_length, range(NUM_DIMENSIONS))
+						new_error=self.archive_error(FLAGS.test_set_length, range(World.state_size))
 						if min_archive_error>new_error:
 							logfile.write("New achieved archive error: "+str(new_error)+"\n")
 							min_archive_error=new_error
@@ -544,7 +504,7 @@ class Cumule():
 					#Plot the raw errors of the predictors in the population 
 					# fig=subplot(2,3,3)
 					# fig.clear()
-					# bar(np.arange(0,NUM_DIMENSIONS),self.agent.problemsMutationProbabilities(self.agent.problemsDistribution()))
+					# bar(np.arange(0,World.state_size),self.agent.problemsMutationProbabilities(self.agent.problemsDistribution()))
 					# xlabel("problem number")
 					# ylabel("mutation probabilty")
 					
@@ -565,7 +525,7 @@ class Cumule():
 					fig=subplot(2,3,4)
 					fig.clear()
 					title('Solved problems(blue means solved)')
-					barlist=bar(np.arange(0,NUM_DIMENSIONS),[1 for k in self.agent.archive])
+					barlist=bar(np.arange(0,World.state_size),[1 for k in self.agent.archive])
 					for k,v in enumerate(self.agent.archive):
 						if v==0:
 							color='r'
@@ -575,7 +535,7 @@ class Cumule():
 
 					fig=subplot(2,3,5)
 					fig.clear()
-					bar(np.arange(0,NUM_DIMENSIONS),self.agent.problemsAllocation(self.agent.problemsDistribution()))
+					bar(np.arange(0,World.state_size),self.agent.problemsAllocation(self.agent.problemsDistribution()))
 					xlabel("Problem number")
 					ylabel("Predictors")
 
@@ -613,7 +573,7 @@ class Cumule():
 					# fig=subplot(5,2,3)
 					# fig.clear()
 					# # imshow(np.array(outputTypes).T)
-					# bar(np.arange(0,NUM_DIMENSIONS),self.agent.problemsAllocation(self.agent.problemsDistribution()))
+					# bar(np.arange(0,World.state_size),self.agent.problemsAllocation(self.agent.problemsDistribution()))
 					# xlabel("Problem number")
 					# ylabel("Predictors")
 
