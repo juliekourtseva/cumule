@@ -48,6 +48,8 @@ parser.add_argument("--input_mutation_prob", help="input mutation probability pe
 parser.add_argument("--output_mutation_prob", help="output mutation probability per mask(default: 0.9)", type=float, default=0.9)
 parser.add_argument("--replication_prob", help="weight copy probability per weight(default: 0.1)", type=float, default=0.1)
 parser.add_argument("--predictor_mutation_prob", help="tournament loser mutation probability(default: 1)", type=float, default=1.0)
+parser.add_argument("--convergence", help="run algorithm only until convergence", action="store_true",default=False)
+
 
 from world import World	
 
@@ -308,8 +310,8 @@ class Agent():
 			self.predictors[loser] = newLoser
 
 			self.predictors[loser].learning_rate =  FLAGS.learning_rate
-			self.predictors[loser].ds = SupervisedDataSet(10, 8)
-			self.predictors[loser].net = buildNetwork(10,10,8, bias=True)
+			self.predictors[loser].ds = SupervisedDataSet(World.state_size+World.action_size, World.state_size)
+			self.predictors[loser].net = buildNetwork(World.state_size+World.action_size,World.state_size+World.action_size,World.state_size, bias=True)
 			self.predictors[loser].trainer = BackpropTrainer(self.predictors[loser].net, self.predictors[loser].ds, learningrate=self.predictors[loser].learning_rate, verbose = False, weightdecay=WEIGHT_DECAY)
 		
 			
@@ -437,7 +439,10 @@ class Cumule():
 					else:
 						return min_archive_error
 				elif FLAGS.timelimit==-1 and min_archive_error!=1000:
-					return min_archive_error 
+					if FLAGS.convergence:
+						return [min_archive_error,self.timestep]
+					else:
+						return min_archive_error
 
 				logfile.write("Timestep:"+str(i)+"\n")
 				
@@ -606,8 +611,12 @@ if __name__ == '__main__':
 		if result==-1:
 			print "Couldn't find a solution for one of the runs in "+str(tries)+" tries. Something is clearly wrong."
 		else:
-			errs.append(result)
-			print result
+			if FLAGS.convergence:
+				errs.append(result[0])
+				print str(result[0])+";"+str(result[1])
+			else:
+				errs.append(result)
+				print result
 	print "Average: "+str(np.mean(errs))
 	print "Standard deviation: "+str(np.std(errs))
 	print "Min: "+str(np.min(errs))
@@ -616,6 +625,7 @@ if __name__ == '__main__':
 	if FLAGS.show_test_error:
 		c.test_archive()
 		raw_input("Press Enter to exit")
+
 
 
 

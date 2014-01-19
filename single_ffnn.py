@@ -13,6 +13,7 @@ from pybrain.datasets import SupervisedDataSet
 from pybrain.structure import TanhLayer, LinearLayer
 from pybrain.tools.validation import ModuleValidator
 
+from world import World
 from silent_predictor import *
 
 #5th January 2014. Cumule Algorithm (Chrisantha Fernando)
@@ -22,8 +23,8 @@ from silent_predictor import *
 class ArrayOfFFNNs:
 	def __init__(self, networks=1):
 		self.world=World()
-		self.nets=[buildNetwork(NUM_DIMENSIONS+NUM_MOTORS,10,NUM_DIMENSIONS) for i in range(networks)]
-		self.ds=[SupervisedDataSet(NUM_DIMENSIONS+NUM_MOTORS,NUM_DIMENSIONS) for i in range(networks)]
+		self.nets=[buildNetwork(World.state_size+World.action_size,World.state_size+World.action_size,World.state_size) for i in range(networks)]
+		self.ds=[SupervisedDataSet(World.state_size+World.action_size,World.state_size) for i in range(networks)]
 
 		self.trainers=[BackpropTrainer(self.nets[k], self.ds[k], learningrate=FLAGS.learning_rate, verbose = False, weightdecay=WEIGHT_DECAY) for k in range(networks)]
 		self.networks=networks
@@ -53,7 +54,7 @@ class ArrayOfFFNNs:
 				for j in range(FLAGS.epochs):
 					self.trainers[n].train()
 
-		self.plots=np.ndarray((self.networks,NUM_DIMENSIONS,FLAGS.test_set_length,2))*0
+		self.plots=np.ndarray((self.networks,World.state_size,FLAGS.test_set_length,2))*0
 
 		errs=[0 for i in range(self.networks)]
 
@@ -72,14 +73,14 @@ class ArrayOfFFNNs:
 
 				errs[n]+=0.5*sum(np.power(predicted-expected,2))
 				
-				for i in range(NUM_DIMENSIONS):
+				for i in range(World.state_size):
 					self.plots[n,i,t]=[predicted[i], expected[i]]
 
 		return np.divide(errs,FLAGS.test_set_length)
 		
 	def show_test_error(self,n):
 		figure()
-		for i in range(NUM_DIMENSIONS):
+		for i in range(World.state_size):
 			subplot(4,2,i)
 			plot(self.plots[n,i,:,:])
 		show()

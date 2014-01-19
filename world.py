@@ -1,49 +1,86 @@
 import sys,random,time,math
+import numpy as np
+from numpy.random import RandomState
+from random import shuffle
 
+import sys
 
-NUM_MOTORS=2
-NUM_DIMENSIONS=8
+#FFNN supervised learning packages 
+# from pybrain.supervised.trainers import BackpropTrainer
+from pybrain.tools.shortcuts import buildNetwork
+# from pybrain.datasets import SupervisedDataSet
+from pybrain.structure import TanhLayer, LinearLayer
+# from pybrain.tools.validation import ModuleValidator
+
+# Author : Nguyen Sao Mai
+# nguyensmai@gmail.com
+# nguyensmai.free.fr
+NUMO1 = 1
+NUMO2 = 3
+NUMI1 = 3
+NUMI2 = 5
+NUM_MOTORS = 2
+NUM_DIMENSIONS = 3*NUMO1 + 4*NUMO2 
 
 class World(): 
-	state_size=NUM_DIMENSIONS
-	action_size=NUM_MOTORS
+    
+    state_size=NUM_DIMENSIONS
+    action_size=NUM_MOTORS
+    
+    def __init__(self):
+        #Create world data structures 
+        self.s = [0]*NUM_DIMENSIONS    #CURRENT STATE 
+        self.stp1 = [0]*NUM_DIMENSIONS #TEMPORARY STATE. 
+        #Create function sructures
+        self.f1 = buildNetwork(NUMI1, 10, NUMO1, hiddenclass=TanhLayer, bias=True)
+        self.f2 = buildNetwork(NUMI2, 10, NUMO2, hiddenclass=TanhLayer, bias=True)
+        self.indI = np.random.randint(0,NUM_DIMENSIONS+NUM_MOTORS, size=3*NUMI1+4*NUMI2)
+        self.indO = range(3*NUMO1+4*NUMO2);
+        shuffle(self.indO)
 
-	def __init__(self):
 
-		#Create world data structures 
-		self.s = [0]*NUM_DIMENSIONS    #CURRENT STATE 
-		self.stp1 = [0]*NUM_DIMENSIONS #TEMPORARY STATE. 
 
-	def resetState(self, m):
-		self.s = [0]*NUM_DIMENSIONS    #CURRENT STATE 
-		s = self.updateState(m)
-		return s
+    def resetState(self, m):
+        self.s = [0]*NUM_DIMENSIONS    #CURRENT STATE 
+        s = self.updateState(m)
+        return s
 
-	def updateState(self, m):
 
-		#Update each state in this weird and impenetrable manner. 
-		self.stp1[0] = math.cos(self.s[0] + m[0])
-		self.stp1[1] = math.cos(self.s[1] + m[1])
-		p0 = pow(self.s[0],2)
-		p1 = pow(self.s[1],2)
-		p2 = pow(self.s[2],2)
-		p3 = pow(self.s[3],2)
-		p4 = pow(self.s[4],2)
-		self.stp1[2] = math.cos(p1 + p3 + p4 + pow(m[1],2) ) #Is there a mistake here Mai?
-		self.stp1[3] = math.cos(self.s[0] + self.s[1])
-		self.stp1[4] = math.cos(m[0] + m[1])
-		self.stp1[5] = p2 + p3 + p4
-		self.stp1[6] = p0 + p1 + p2
-		self.stp1[7] = pow(m[0], 2) + p3 + p4
+    def updateState(self, m):
+        initInput = 0;
+        initOutput = 0;
+        dimI1 = self.f1['in'].dim;
+        dimI2 = self.f2['in'].dim;
+        dimO1 = self.f1['out'].dim;
+        dimO2 = self.f2['out'].dim;
+        sm    = self.s+m;
+        output=[];
+        input = [];
+        self.stp1=[]
 
-		#Set s to s(t+1)
-		for i in range(NUM_DIMENSIONS):
-			self.s[i] = self.stp1[i]
+        for i in self.indI:
+            input.append(sm[i])
 
-		return self.s
+        for i in range(3):
+            output[initOutput:initOutput+dimO1] = self.f1.activate(input[initInput:initInput+dimI1])
+            initInput += dimI1;
+            initOutput += dimO1;
 
-	def getState(self):
-		return self.s
+        for i in range(4):
+            output[initOutput:initOutput+dimO2] = self.f2.activate(input[initInput:initInput+dimI2])
+            initInput += dimI2
+            initOutput += dimO2;
 
-	def getRandomMotor(self):
-		return [random.uniform(0,1), random.uniform(0,1)]
+        for i in self.indO:
+            self.stp1.append(output[i])
+
+        return self.stp1
+    
+    def getRandomMotor(self):
+        return [random.uniform(0,1), random.uniform(0,1)]
+    
+
+    def getState(self):
+        return self.s
+
+
