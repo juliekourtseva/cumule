@@ -310,7 +310,7 @@ class Agent():
 			self.predictors[loser].ds = SupervisedDataSet(10, 8)
 			self.predictors[loser].net = buildNetwork(10,10,8, bias=True)
 			self.predictors[loser].trainer = BackpropTrainer(self.predictors[loser].net, self.predictors[loser].ds, learningrate=self.predictors[loser].learning_rate, verbose = False, weightdecay=WEIGHT_DECAY)
-		
+
 			
 			if FLAGS.replication:
 				for i in range(len(self.predictors[loser].net.params)):
@@ -327,7 +327,12 @@ class Agent():
 						else:
 							self.predictors[loser].inputMask[i] = 0
 
-			if random.uniform(0,1) < FLAGS.output_mutation_prob:
+			allocation = [a*1.0/FLAGS.num_predictors for a in self.problemsAllocation(self.problemsDistribution())]
+			current_problem = self.predictors[loser].outputMask.index(1)
+			problem_fraction = allocation[current_problem]
+
+			# if there are more predictors for this output, increase the probability of output mask mutation
+			if random.uniform(0,1) < (FLAGS.output_mutation_prob * (1 + problem_fraction)**2):
 				self.predictors[loser].outputMask = [0]*World.state_size
 				r = np.random.choice(range(World.state_size),p=distribution)
 				self.predictors[loser].outputMask[r] = 1
@@ -386,7 +391,8 @@ class Cumule():
 				subplot(4,2,i)
 				title("Problem #"+str(i))
 				plot(plots[i,:,:])
-			show()
+			#show()
+			savefig("figure2.png")
 
 		def archive_error(self,test_length,dims):
 			m = self.agent.getRandomMotor()
@@ -413,7 +419,7 @@ class Cumule():
 
 
 
-		def run(self): 
+		def run(self, run_number, try_number):
 
 			logfile=open("prediction.log",'w',1)
 			errHis = []
@@ -539,7 +545,9 @@ class Cumule():
 					xlabel("Problem number")
 					ylabel("Predictors")
 
-					draw()
+					savefig("figure1_%s_%s.png" % (run_number, try_number))
+
+					#draw()
 
 				if i%FLAGS.evolution_period == 0:
 					a = random.randint(0, FLAGS.num_predictors-1)
@@ -583,7 +591,7 @@ class Cumule():
 
 
 if __name__ == '__main__':
-	ion()
+	#ion()
 
 	FLAGS=parser.parse_args()
 
@@ -597,10 +605,10 @@ if __name__ == '__main__':
 
 	for i in range(FLAGS.runs):
 		c = Cumule()
-		result=c.run()
+		result=c.run(i, 0)
 		tries=0
 		while result==-1 and tries<10:
-			result=c.run() # we need to get those N runs
+			result=c.run(i, tries) # we need to get those N runs
 			tries+=1
 		
 		if result==-1:
