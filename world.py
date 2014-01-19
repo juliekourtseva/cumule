@@ -1,18 +1,25 @@
 import sys,random,time,math
 
-
 NUM_MOTORS=2
 NUM_DIMENSIONS=8
 
 class World(): 
 	state_size=NUM_DIMENSIONS
 	action_size=NUM_MOTORS
+	correct_masks = [[1, 0, 0, 0, 0, 0, 0, 0, 1, 0],
+					 [0, 1, 0, 0, 0, 0, 0, 0, 0, 1],
+					 [0, 1, 0, 1, 1, 0, 0, 0, 0, 1],
+					 [1, 1, 0, 0, 0, 0, 0, 0, 0, 0],
+					 [0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+					 [0, 0, 1, 1, 1, 0, 0, 0, 0, 0],
+					 [1, 1, 1, 0, 0, 0, 0, 0, 0, 0],
+					 [0, 0, 0, 1, 1, 0, 0, 0, 1, 0]]
 
 	def __init__(self):
 
 		#Create world data structures 
 		self.s = [0]*NUM_DIMENSIONS    #CURRENT STATE 
-		self.stp1 = [0]*NUM_DIMENSIONS #TEMPORARY STATE. 
+		self.stp1 = [0]*NUM_DIMENSIONS #TEMPORARY STATE.
 
 	def resetState(self, m):
 		self.s = [0]*NUM_DIMENSIONS    #CURRENT STATE 

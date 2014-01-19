@@ -39,7 +39,7 @@ parser.add_argument("-a","--archive_threshold", help="threshold for getting into
 parser.add_argument("-lr","--learning_rate", help="learning rate for predictors(default: 0.01)", type=float, default=0.01)
 parser.add_argument("-r","--replication", help="enable weights replication(default: no)",action="store_true", default=False)
 parser.add_argument("-lg","--logfile", help="log file name(default: prediction.log)",type=str, default="prediction.log")
-parser.add_argument("-i","--mutate_input", help="enable input mask mutation(default: yes)",action="store_true", default=True)
+parser.add_argument("-i","--disable_input_mutation", help="disable input mask mutation(default: false)",action="store_true", default=False)
 parser.add_argument("--episode_length", help="number of samples per episode(default: 50)",action="store_true", default=10)
 parser.add_argument("--show_test_error", help="test archive and show the plot", action="store_true",default=False)
 parser.add_argument("--show_plots", help="show live plots", action="store_true",default=False)
@@ -49,7 +49,7 @@ parser.add_argument("--output_mutation_prob", help="output mutation probability 
 parser.add_argument("--replication_prob", help="weight copy probability per weight(default: 0.1)", type=float, default=0.1)
 parser.add_argument("--predictor_mutation_prob", help="tournament loser mutation probability(default: 1)", type=float, default=1.0)
 
-from world import World	
+from world import World
 
 
 
@@ -64,14 +64,13 @@ class Predictor():
 		self.prediction = [0] * outSize
 		self.mse = 100
 		self.age=0
-
-		#Specific to Mai's code. Make input and output masks.  
-		self.inputMask = [1 for i in range(inSize)]
 		
 #		self.outputMask = [random.randint(0, 1) for i in range(outSize)]
 		self.outputMask = [0]*outSize
 		r = random.randint(0,outSize-1)
 		self.outputMask[r] = 1
+		#Specific to Mai's code. Make input and output masks.  
+		self.inputMask = World.correct_masks[r]
 
 		self.error = 0
 		self.errorHistory = []
@@ -320,7 +319,7 @@ class Agent():
 			
 			# self.predictors[loser].net._setParameters(self.predictors[loser].net.params) # why?
 
-			if FLAGS.mutate_input:
+			if not FLAGS.disable_input_mutation:
 				for i in range(len(self.predictors[loser].inputMask)):
 					if random.uniform(0,1) < FLAGS.input_mutation_prob:
 						if self.predictors[loser].inputMask[i] == 0:
@@ -333,6 +332,7 @@ class Agent():
 				r = np.random.choice(range(World.state_size),p=distribution)
 				self.predictors[loser].outputMask[r] = 1
 				self.predictors[loser].problem=r
+				self.predictors[loser].inputMask = World.correct_masks[r]
 
 class Cumule():
 		def __init__(self):
@@ -616,8 +616,3 @@ if __name__ == '__main__':
 	if FLAGS.show_test_error:
 		c.test_archive()
 		raw_input("Press Enter to exit")
-
-
-
-
-
