@@ -456,17 +456,17 @@ class Cumule():
 
 
 				# Archive evaluating
-				if self.agent.archive.count(0) < 8:
+				if self.agent.archive.count(0) < World.state_size:
 					if archive_changed==True:
 						new_error=self.test_archive(itime)
-						if min_archive_error>new_error:
-							logfile.write("New achieved archive error: "+str(new_error)+"\n")
-							min_archive_error=new_error
-
+						if self.agent.archive.count(0) == 0:
+							if min_archive_error>new_error:
+								logfile.write("New achieved archive error: "+str(new_error)+"\n")
+								min_archive_error=new_error
 						archive_changed=False
 
 				distr=self.agent.problemsDistribution()
-				
+
 				# Check if there's a candidate solution in population
 				if itime!=0:
 					bestEfforts=self.agent.minErrors(distr)
