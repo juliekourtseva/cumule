@@ -276,11 +276,19 @@ class Agent():
 			r=np.divide(r,sum(r))
 			return r
 		
-		def minErrors(self,distr):
+		def minErrors(self,distr,rewardMinimal=True):
 			r=[]
 			for problem, predictors in enumerate(distr):
 				if len(predictors)!=0:
+					if rewardMinimal:
+						# Trying to get a difference of between 10 and 20 for 8 bits set vs 2.5 bits set
+						# 2.5 is roughly the average number of bits that the "correct" input mask would use in this case
+						errMultipliers = [(FLAGS.punish_inputs_base**sum(p.inputMask))/(FLAGS.punish_inputs_base**2.5) for p in predictors]
+					else:
+						errMultipliers = [1 for p in predictors]
 					errors=[p.error for p in predictors]
+					for e in xrange(len(errors)):
+						errors[e] *= errMultipliers[e]
 					best=np.argmin(errors)
 					err=errors[best]
 
@@ -423,14 +431,16 @@ class Cumule():
 				title("Problem #"+str(i))
 				plot(plots[i,:,:])
 			#show()
-			savefig("archive_saved.png")
-			shutil.move("archive_saved.png", "archive_saved_%s%s.png" % (itime, FLAGS.suffix))
+			savefig("archive_saved%s.png" % FLAGS.suffix)
+			shutil.move("archive_saved%s.png" % FLAGS.suffix, "archive_saved_%s%s.png" % (itime, FLAGS.suffix))
 
 			figure()
 			num_errors = []
+			#print nonzero
 			for i in nonzero:
 				# fraction of incorrect bits in input mask over the total number of bits
-				diff = sum(list_diff(World.correct_masks[i], self.agent.archive[i].inputMask))/len(self.agent.archive[i].inputMask)
+				diff = sum(list_diff(World.correct_masks[i], self.agent.archive[i].inputMask))*1.0/len(self.agent.archive[i].inputMask)
+				#print i, World.correct_masks[i], self.agent.archive[i].inputMask, diff
 				num_errors.append(diff)
 			bar(nonzero, num_errors)
 			savefig("archive_wrong_input_fractions_%s.png" % FLAGS.suffix)
@@ -438,7 +448,7 @@ class Cumule():
 
 			return 0.5*err/FLAGS.test_set_length
 
-		def archive_error(self,test_length,dims):
+		def archive_error(self, test_length, dims):
 			m = self.agent.getRandomMotor()
 			s = self.world.updateState(m)
 			err=0
@@ -634,6 +644,12 @@ class Cumule():
 			logfile.close()
 
 global_errs=[]
+def print_global_errs():
+	print "Average: "+str(np.mean(global_errs))
+	print "Standard deviation: "+str(np.std(global_errs))
+	print "Min: "+str(np.min(global_errs))
+	print "Max: "+str(np.max(global_errs))
+
 if __name__ == '__main__':
 	#ion()
 
@@ -665,11 +681,5 @@ if __name__ == '__main__':
 	# if FLAGS.show_test_error:
 	# 	c.test_archive()
 	# 	raw_input("Press Enter to exit")
-
-def print_global_errs():
-	print "Average: "+str(np.mean(global_errs))
-	print "Standard deviation: "+str(np.std(global_errs))
-	print "Min: "+str(np.min(global_errs))
-	print "Max: "+str(np.max(global_errs))
 
 atexit.register(print_global_errs)
