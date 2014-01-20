@@ -58,7 +58,7 @@ parser.add_argument("--punish_archive_factor", help="factor by which to multiply
 parser.add_argument("--suffix", help="suffix for log files (default: '')", type=str, default='')
 parser.add_argument("--initial_input", help="input mask initialisation options (default: ones, other options: random, correct)", type=str, default='ones')
 parser.add_argument("--punish_inputs_base", help="error = error*(base^(number of bits in input mask))/base^2.5 (default: 1.6)", type=float, default=1.6)
-parser.add_argument("--recombine_inputs", help="recombine input masks (default: False)", action="store_true", default=False)
+parser.add_argument("--recombination_prob", help="input masks recombination probability (default: 0.0)", type=float, default=0.0)
 
 from world import World
 
@@ -351,15 +351,20 @@ class Agent():
 			self.predictors[loser].ds = SupervisedDataSet(10, 8)
 			self.predictors[loser].net = buildNetwork(10,10,8, bias=True)
 			self.predictors[loser].trainer = BackpropTrainer(self.predictors[loser].net, self.predictors[loser].ds, learningrate=self.predictors[loser].learning_rate, verbose = False, weightdecay=WEIGHT_DECAY)
-			self.predictors[loser].inputMask = self.predictors[winner].inputMask
 			self.predictors[loser].outputMask = self.predictors[winner].outputMask
-			
+
 			if FLAGS.replication:
 				for i in range(len(self.predictors[loser].net.params)):
 					if random.uniform(0,1)<FLAGS.replication_prob:
 						self.predictors[loser].net.params[i] = self.predictors[winner].net.params[i]
 			
 			#self.predictors[loser].net._setParameters(self.predictors[loser].net.params)
+
+			if random.uniform(0,1) < FLAGS.recombination_prob:
+				recombination_point = random.randint(0, len(loser.inputMask)-1)
+				self.predictors[loser].inputMask = self.predictors[loser].inputMask[:recombination_point] + self.predictors[winner].inputMask[recombination_point:]
+			else:
+				self.predictors[loser].inputMask = self.predictors[winner].inputMask
 
 			if not FLAGS.disable_input_mutation:
 				for i in range(len(self.predictors[loser].inputMask)):
@@ -379,7 +384,7 @@ class Agent():
 				r = np.random.choice(range(World.state_size),p=distribution)
 				self.predictors[loser].outputMask[r] = 1
 				self.predictors[loser].problem=r
-				if FLAGS.disable_input_mutation and FLAGS.initial_input == INITIAL_INPUT_CORRECT:
+				if (FLAGS.initial_input == INITIAL_INPUT_CORRECT):
 					self.predictors[loser].inputMask = World.correct_masks[r]
 
 class Cumule():
