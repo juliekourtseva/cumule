@@ -151,7 +151,7 @@ class Predictor():
 		if rewardMinimal:
 			# Trying to get a difference of between 10 and 20 for 8 bits set vs 2.5 bits set
 			# 2.5 is roughly the average number of bits that the "correct" input mask would use in this case
-			errMultiplier = (FLAGS.punish_inputs_base**sum(self.inputMask))/(FLAGS.punish_inputs_base**2.5)
+			errMultiplier = FLAGS.punish_inputs_base**(sum(self.inputMask)-2.5)
 		else:
 			errMultiplier = 1
 
@@ -283,7 +283,7 @@ class Agent():
 					if rewardMinimal:
 						# Trying to get a difference of between 10 and 20 for 8 bits set vs 2.5 bits set
 						# 2.5 is roughly the average number of bits that the "correct" input mask would use in this case
-						errMultipliers = [(FLAGS.punish_inputs_base**sum(p.inputMask))/(FLAGS.punish_inputs_base**2.5) for p in predictors]
+						errMultipliers = [(FLAGS.punish_inputs_base**(sum(p.inputMask)-2.5)) for p in predictors]
 					else:
 						errMultipliers = [1 for p in predictors]
 					errors=[p.error for p in predictors]
