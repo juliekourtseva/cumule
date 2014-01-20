@@ -58,6 +58,7 @@ parser.add_argument("--punish_archive_factor", help="factor by which to multiply
 parser.add_argument("--suffix", help="suffix for log files (default: '')", type=str, default='')
 parser.add_argument("--initial_input", help="input mask initialisation options (default: ones, other options: random, correct)", type=str, default='ones')
 parser.add_argument("--punish_inputs_base", help="error = error*(base^(number of bits in input mask))/base^2.5 (default: 1.6)", type=float, default=1.6)
+parser.add_argument("--recombine_inputs", help="recombine input masks (default: False)", action="store_true", default=False)
 
 from world import World
 
@@ -175,6 +176,12 @@ class Predictor():
 
 	def predict(self,inputA):
 		return self.net.activate(inputA)
+
+	def predict_masked(self,inputA):
+		input_masked = inputA[:]
+		for i in xrange(len(input_masked)):
+			input_masked *= self.inputMask[i]
+		return self.predict(input_masked)
 
 
 class Agent(): 
@@ -372,6 +379,8 @@ class Agent():
 				r = np.random.choice(range(World.state_size),p=distribution)
 				self.predictors[loser].outputMask[r] = 1
 				self.predictors[loser].problem=r
+				if FLAGS.disable_input_mutation and FLAGS.initial_input == INITIAL_INPUT_CORRECT:
+					self.predictors[loser].inputMask = World.correct_masks[r]
 
 class Cumule():
 		def __init__(self):
@@ -420,7 +429,7 @@ class Cumule():
 				for i in range(World.state_size):
 					if self.agent.archive[i] != 0:
 						nonzero.append(i)
-						predicted=self.agent.archive[i].predict(inp)
+						predicted=self.agent.archive[i].predict_masked(inp)
 						expected=stp1
 						err+=(predicted[i]-expected[i])**2
 						plots[i,t]=[predicted[i], expected[i]]
@@ -462,7 +471,7 @@ class Cumule():
 				expected=stp1
 
 				for i in dims:
-					predicted[i]=self.agent.archive[i].predict(inp)[i]
+					predicted[i]=self.agent.archive[i].predict_masked(inp)[i]
 					err+=(predicted[i]-expected[i])**2
 
 			return 0.5*err/test_length
