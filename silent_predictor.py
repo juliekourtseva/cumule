@@ -1,5 +1,5 @@
 import pylab,pickle,sys,pprint,random,time,math
-from collections import deque
+from collections import deque, defaultdict
 import numpy as np
 from numpy.random import RandomState
 import pickle
@@ -59,8 +59,9 @@ parser.add_argument("--suffix", help="suffix for log files (default: '')", type=
 parser.add_argument("--initial_input", help="input mask initialisation options (default: ones, other options: random, correct)", type=str, default='ones')
 parser.add_argument("--punish_inputs_base", help="error = error*(base^(number of bits in input mask))/base^2.5 (default: 1.6)", type=float, default=1.6)
 parser.add_argument("--recombination_prob", help="input masks recombination probability (default: 0.0)", type=float, default=0.0)
+parser.add_argument("--population_test_length", help="number of time steps for which to test predictors in population (default: 10)", type=int, default=10)
 
-from world import World
+from new_world import World
 
 
 def list_diff(list1, list2):
@@ -282,7 +283,7 @@ class Agent():
 			r=np.divide(r,sum(r))
 			return r
 		
-		def minErrors(self,distr,rewardMinimal=True):
+		def minTrainErrors(self,distr,rewardMinimal=True):
 			r=[]
 			for problem, predictors in enumerate(distr):
 				if len(predictors)!=0:
@@ -299,6 +300,37 @@ class Agent():
 					err=errors[best]
 
 					r.append((problem,err,predictors[best]))	
+			return r
+
+		def minTestErrors(self,distr,test_length,test_world):
+			r=[]
+			#Generate random initial motor command between -1 and 1. 
+			m = self.getRandomMotor()
+			#Generate initial state for this motor command, and all else zero. 
+			s = test_world.updateState(m)
+
+			sum_errors = defaultdict(list)
+			for t in range(test_length):#*********************************************
+
+				m = self.getRandomMotor()
+				stp1 = test_world.updateState(m)
+				inp = np.concatenate((s,m), axis = 0)
+				s = stp1
+
+				for problem, predictors in enumerate(distr):
+					if len(predictors) != 0:
+						errors = [(stp1[problem] - p.predict_masked(inp)[problem])**2 for p in predictors]
+						if len(sum_errors[problem]) == 0:
+							sum_errors[problem] = errors
+						else:
+							for k in xrange(len(predictors)):
+								sum_errors[problem][k] += errors[k]
+
+			for problem, predictors in enumerate(distr):
+				if len(predictors) != 0:
+					best = np.argmin(sum_errors[problem])
+					err = sum_errors[problem][best]
+					r.append((problem, err, predictors[best]))
 			return r
 
 		def problemsAllocation(self,distr):
@@ -347,8 +379,8 @@ class Agent():
 			self.predictors[loser] = newLoser
 
 			self.predictors[loser].learning_rate =  FLAGS.learning_rate
-			self.predictors[loser].ds = SupervisedDataSet(10, 8)
-			self.predictors[loser].net = buildNetwork(10,10,8, bias=True)
+			self.predictors[loser].ds = SupervisedDataSet(World.state_size+World.action_size, World.state_size)
+			self.predictors[loser].net = buildNetwork(World.state_size+World.action_size,World.state_size+World.action_size,World.state_size, bias=True)
 			self.predictors[loser].trainer = BackpropTrainer(self.predictors[loser].net, self.predictors[loser].ds, learningrate=self.predictors[loser].learning_rate, verbose = False, weightdecay=WEIGHT_DECAY)
 			self.predictors[loser].outputMask = self.predictors[winner].outputMask
 
@@ -438,13 +470,22 @@ class Cumule():
 						plots[i,t]=[predicted[i], stp1[i]]
 			
 			figure()
-			for i in range(World.state_size):
-				subplot(4,2,i)
+			for i in range(World.state_size/2):
+				subplot(World.state_size/4,2,i)
 				title("Problem #"+str(i))
 				plot(plots[i,:,:])
 			#show()
-			savefig("archive_saved%s.png" % FLAGS.suffix)
-			shutil.move("archive_saved%s.png" % FLAGS.suffix, "archive_saved_%s%s.png" % (itime, FLAGS.suffix))
+			savefig("archive_saved%s_0.png" % FLAGS.suffix)
+			shutil.move("archive_saved%s_0.png" % FLAGS.suffix, "archive_saved_%s%s_part0.png" % (itime, FLAGS.suffix))
+
+			figure()
+			for i in range(World.state_size/2, World.state_size):
+				subplot((World.state_size+2)/4,2,(i-World.state_size/2))
+				title("Problem #"+str(i))
+				plot(plots[i,:,:])
+			#show()
+			savefig("archive_saved%s_1.png" % FLAGS.suffix)
+			shutil.move("archive_saved%s_1.png" % FLAGS.suffix, "archive_saved_%s%s_part1.png" % (itime, FLAGS.suffix))
 
 			figure()
 			num_errors = []
@@ -510,7 +551,6 @@ class Cumule():
 				m = self.agent.getRandomMotor() 
 				s = self.world.resetState(m)
 
-
 				# Archive evaluating
 				if self.agent.archive.count(0) < World.state_size:
 					if archive_changed==True:
@@ -525,7 +565,7 @@ class Cumule():
 
 				# Check if there's a candidate solution in population
 				if itime!=0:
-					bestEfforts=self.agent.minErrors(distr)
+					bestEfforts=self.agent.minTestErrors(distr, FLAGS.population_test_length, self.world)
 					for problem, error, predictor in bestEfforts:
 						if error<FLAGS.archive_threshold:
 							if self.agent.archive[problem]==0:
