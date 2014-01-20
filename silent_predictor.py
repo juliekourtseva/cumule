@@ -9,6 +9,7 @@ import argparse
 import shutil
 
 import sys
+import atexit
 
 #FFNN supervised learning packages 
 from pybrain.supervised.trainers import BackpropTrainer
@@ -28,6 +29,10 @@ WEIGHT_DECAY=0.1
 BACKTIME=10
 PREDICTOR_MUTATION_PROBABILITY=0.8
 # WEIGHT_COPY_PROBABILITY=0.05
+
+INITIAL_INPUT_ALL_ONES = "ones"
+INITIAL_INPUT_RANDOM = "random"
+INITIAL_INPUT_CORRECT = "correct"
 
 parser = argparse.ArgumentParser()
 parser.add_argument("timelimit",default=50,type=int)
@@ -49,10 +54,22 @@ parser.add_argument("--input_mutation_prob", help="input mutation probability pe
 parser.add_argument("--output_mutation_prob", help="output mutation probability per mask(default: 0.9)", type=float, default=0.9)
 parser.add_argument("--replication_prob", help="weight copy probability per weight(default: 0.1)", type=float, default=0.1)
 parser.add_argument("--predictor_mutation_prob", help="tournament loser mutation probability(default: 1)", type=float, default=1.0)
-parser.add_argument("-ar", "--punish_archive_factor", help="factor by which to multiply error for predictors already in archive (default: 15)", type=float, default=15)
+parser.add_argument("--punish_archive_factor", help="factor by which to multiply error for predictors already in archive (default: 15)", type=float, default=15)
 parser.add_argument("--suffix", help="suffix for log files (default: '')", type=str, default='')
+parser.add_argument("--initial_input", help="input mask initialisation options (default: ones, other options: random, correct)", type=str, default='ones')
+parser.add_argument("--punish_inputs_base", help="error = error*(base^(number of bits in input mask))/base^2.5 (default: 1.6)", type=float, default=1.6)
 
 from world import World
+
+
+def list_diff(list1, list2):
+	list_out = list1[:]
+	for i in xrange(len(list_out)):
+		list_out[i] = abs(list_out[i] - list2[i])
+	return list_out
+
+def stringify_mask(mask):
+	return "".join([str(b) for b in mask])
 
 class Predictor(): 
 
@@ -70,9 +87,13 @@ class Predictor():
 		self.outputMask = [0]*outSize
 		r = random.randint(0,outSize-1)
 		self.outputMask[r] = 1
-		#Specific to Mai's code. Make input and output masks.  
-		self.inputMask = World.correct_masks[r]
-
+		#Specific to Mai's code. Make input and output masks.
+		if FLAGS.initial_input == INITIAL_INPUT_CORRECT:
+			self.inputMask = World.correct_masks[r]
+		elif FLAGS.initial_input == INITIAL_INPUT_RANDOM:
+			self.inputMask = [random.randint(0, 1) for i in range(inSize)]
+		elif FLAGS.initial_input == INITIAL_INPUT_ALL_ONES:
+			self.inputMask = [1]*inSize
 		self.error = 0
 		self.errorHistory = []
 		self.dErrorHistory = []
@@ -126,13 +147,19 @@ class Predictor():
 
 		return e
 
-	def getFitness(self, type):
+	def getFitness(self, type, rewardMinimal=True):
+		if rewardMinimal:
+			# Trying to get a difference of between 10 and 20 for 8 bits set vs 2.5 bits set
+			# 2.5 is roughly the average number of bits that the "correct" input mask would use in this case
+			errMultiplier = (FLAGS.punish_inputs_base**sum(self.inputMask))/(FLAGS.punish_inputs_base**2.5)
+		else:
+			errMultiplier = 1
 
 		fit = 0 
 		#Fitness function 1 Chrisantha's attempt 
 		if type == 0:#SIMPLE MINIMIZE PREDICTION ERROR FITNESS FUNCTION FOR PREDICTORS. 
 #           fit = -self.dError/(1.0*self.error)
-			fit = -self.error
+			fit = -self.error*errMultiplier
 		elif type == 1:
 			#Fitness function 2 Mai's attempt (probably need to use adaptive thresholds for this to be ok)
 			if self.error > ERROR_THRESHOLD and self.dError > DERROR_THRESHOLD:
@@ -309,14 +336,15 @@ class Agent():
 			self.predictors[loser].ds = SupervisedDataSet(10, 8)
 			self.predictors[loser].net = buildNetwork(10,10,8, bias=True)
 			self.predictors[loser].trainer = BackpropTrainer(self.predictors[loser].net, self.predictors[loser].ds, learningrate=self.predictors[loser].learning_rate, verbose = False, weightdecay=WEIGHT_DECAY)
-
+			self.predictors[loser].inputMask = self.predictors[winner].inputMask
+			self.predictors[loser].outputMask = self.predictors[winner].outputMask
 			
 			if FLAGS.replication:
 				for i in range(len(self.predictors[loser].net.params)):
 					if random.uniform(0,1)<FLAGS.replication_prob:
 						self.predictors[loser].net.params[i] = self.predictors[winner].net.params[i]
 			
-			# self.predictors[loser].net._setParameters(self.predictors[loser].net.params) # why?
+			#self.predictors[loser].net._setParameters(self.predictors[loser].net.params)
 
 			if not FLAGS.disable_input_mutation:
 				for i in range(len(self.predictors[loser].inputMask)):
@@ -336,7 +364,6 @@ class Agent():
 				r = np.random.choice(range(World.state_size),p=distribution)
 				self.predictors[loser].outputMask[r] = 1
 				self.predictors[loser].problem=r
-				self.predictors[loser].inputMask = World.correct_masks[r]
 
 class Cumule():
 		def __init__(self):
@@ -380,9 +407,11 @@ class Cumule():
 				stp1 = self.world.updateState(m)
 				inp = np.concatenate((s,m), axis = 0)
 				s = stp1
-	
+
+				nonzero = []
 				for i in range(World.state_size):
 					if self.agent.archive[i] != 0:
+						nonzero.append(i)
 						predicted=self.agent.archive[i].predict(inp)
 						expected=stp1
 						err+=(predicted[i]-expected[i])**2
@@ -396,6 +425,17 @@ class Cumule():
 			#show()
 			savefig("archive_saved.png")
 			shutil.move("archive_saved.png", "archive_saved_%s%s.png" % (itime, FLAGS.suffix))
+
+			figure()
+			num_errors = []
+			for i in nonzero:
+				# fraction of incorrect bits in input mask over the total number of bits
+				diff = sum(list_diff(World.correct_masks[i], self.agent.archive[i].inputMask))/len(self.agent.archive[i].inputMask)
+				num_errors.append(diff)
+			bar(nonzero, num_errors)
+			savefig("archive_wrong_input_fractions_%s.png" % FLAGS.suffix)
+			shutil.move("archive_wrong_input_fractions_%s.png" % FLAGS.suffix, "wrong_input_fractions_%s_%s.png" % (itime, FLAGS.suffix))
+
 			return 0.5*err/FLAGS.test_set_length
 
 		def archive_error(self,test_length,dims):
@@ -403,25 +443,19 @@ class Cumule():
 			s = self.world.updateState(m)
 			err=0
 
-
 			for t in range(test_length):#*********************************************
 				m = self.agent.getRandomMotor()
 				stp1 = self.world.updateState(m)
 				inp = np.concatenate((s,m), axis = 0)
-
 				s = stp1
-
 				predicted=np.ndarray(World.state_size)
 				expected=stp1
-	
+
 				for i in dims:
 					predicted[i]=self.agent.archive[i].predict(inp)[i]
 					err+=(predicted[i]-expected[i])**2
 
 			return 0.5*err/test_length
-
-
-
 
 		def run(self, run_number, try_number):
 
@@ -473,7 +507,9 @@ class Cumule():
 					for problem, error, predictor in bestEfforts:
 						if error<FLAGS.archive_threshold:
 							if self.agent.archive[problem]==0:
-								logfile.write("Problem "+str(problem)+" was successfully solved. Error: "+str(round(error,4))+"\n")
+								#logfile.write("Problem "+str(problem)+" was successfully solved. Error: "+str(round(error,4))+"\n")
+								logfile.write("Problem %s was successfully solved. Error: %s, inputMask %s\n" % (
+										problem, round(error, 4), stringify_mask(predictor.inputMask)))
 								self.agent.archive[problem]=predictor
 								self.agent.predictors[self.agent.predictors.index(predictor)]=self.agent.createPredictor(10,problem)
 								archive_changed=True
@@ -485,11 +521,14 @@ class Cumule():
 								self.agent.archive[problem]=predictor
 								new_err=self.archive_error(FLAGS.test_set_length,[problem])
 								if new_err<old_err:
-									logfile.write("Problem "+str(problem)+" has a better solution. Archived test error: "+str(round(old_err,4))+". Better solution: "+str(round(new_err,4))+"\n")
+									#logfile.write("Problem "+str(problem)+" has a better solution. Archived test error: "+str(round(old_err,4))+". Better solution: "+str(round(new_err,4))+"\n")
+									logfile.write("Problem %s has a better solution. Archived test error: %s, input %s. Better solution: %s, input %s\n" % (
+											problem, round(old_err,4), stringify_mask(old_predictor.inputMask), round(new_err,4), stringify_mask(predictor.inputMask)))
 									self.agent.predictors[self.agent.predictors.index(predictor)]=self.agent.createPredictor(10,problem)
 									archive_changed=True
 								else:
-									logfile.write("Solution for "+str(problem)+" remains the same. Archived test error: "+str(round(old_err,4))+". Candidate solution: "+str(round(new_err,4))+"\n")
+									logfile.write("Solution for %s remains the same. Archived test error: %s, inputMask %s. Candidate error %s, inputMask %s\n" % (
+											problem, round(error, 4), stringify_mask(old_predictor.inputMask), round(new_err,4), stringify_mask(predictor.inputMask)))
 									self.agent.archive[problem]=old_predictor
 
 
@@ -594,7 +633,7 @@ class Cumule():
 			
 			logfile.close()
 
-
+global_errs=[]
 if __name__ == '__main__':
 	#ion()
 
@@ -606,7 +645,7 @@ if __name__ == '__main__':
 		print k+": "+str(fl[k])
 
 	avg=0.0
-	errs=[]
+
 
 	for i in range(FLAGS.runs):
 		c = Cumule()
@@ -619,13 +658,18 @@ if __name__ == '__main__':
 		if result==-1:
 			print "Couldn't find a solution for one of the runs in "+str(tries)+" tries. Something is clearly wrong."
 		else:
-			errs.append(result)
+			global_errs.append(result)
 			print result
-	print "Average: "+str(np.mean(errs))
-	print "Standard deviation: "+str(np.std(errs))
-	print "Min: "+str(np.min(errs))
-	print "Max: "+str(np.max(errs))
 
+	print_global_errs()
 	# if FLAGS.show_test_error:
 	# 	c.test_archive()
 	# 	raw_input("Press Enter to exit")
+
+def print_global_errs():
+	print "Average: "+str(np.mean(global_errs))
+	print "Standard deviation: "+str(np.std(global_errs))
+	print "Min: "+str(np.min(global_errs))
+	print "Max: "+str(np.max(global_errs))
+
+atexit.register(print_global_errs)
