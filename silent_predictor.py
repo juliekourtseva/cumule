@@ -6,6 +6,7 @@ import pickle
 from copy import copy,deepcopy
 from matplotlib.pyplot import *
 import argparse
+import shutil
 
 import sys
 
@@ -19,7 +20,7 @@ from pybrain.tools.validation import ModuleValidator
 
 #5th January 2014. Cumule Algorithm (Chrisantha Fernando)
 
-PHASE_1_LENGTH = 100000
+PHASE_1_LENGTH = 10000
 
 # EVOLUTION_PERIOD = 2 #Evolve predictors every 10 episodes. 
 WEIGHT_DECAY=0.1
@@ -48,10 +49,10 @@ parser.add_argument("--input_mutation_prob", help="input mutation probability pe
 parser.add_argument("--output_mutation_prob", help="output mutation probability per mask(default: 0.9)", type=float, default=0.9)
 parser.add_argument("--replication_prob", help="weight copy probability per weight(default: 0.1)", type=float, default=0.1)
 parser.add_argument("--predictor_mutation_prob", help="tournament loser mutation probability(default: 1)", type=float, default=1.0)
+parser.add_argument("-ar", "--punish_archive_factor", help="factor by which to multiply error for predictors already in archive (default: 15)", type=float, default=15)
+parser.add_argument("--suffix", help="suffix for log files (default: '')", type=str, default='')
 
 from world import World
-
-
 
 class Predictor(): 
 
@@ -228,7 +229,7 @@ class Agent():
 					err=-1
 
 				if self.archive[problem]!=0:
-					err=err*2 # we discourage agent from generating predictors that solve already solved problems
+					err=err*FLAGS.punish_archive_factor # we discourage agent from generating predictors that solve already solved problems
 				
 				if err>0 and err<min_err:
 					min_err=err
@@ -247,8 +248,6 @@ class Agent():
 			
 			r=np.divide(r,sum(r))
 			return r
-										
-
 		
 		def minErrors(self,distr):
 			r=[]
@@ -366,13 +365,14 @@ class Cumule():
 			xlabel('generations')
 			ylabel('fitness')
 
-		def test_archive(self):
+		def test_archive(self, itime):
 			plots=np.ndarray((World.state_size,FLAGS.test_set_length,2))*0
 
 			#Generate random initial motor command between -1 and 1. 
 			m = self.agent.getRandomMotor()
 			#Geneate initial state for this motor command, and all else zero. 
 			s = self.world.updateState(m)
+			err=0
 			
 			for t in range(FLAGS.test_set_length):#*********************************************
 
@@ -382,9 +382,11 @@ class Cumule():
 				s = stp1
 	
 				for i in range(World.state_size):
-					predicted=self.agent.archive[i].predict(inp)
-					expected=stp1
-					plots[i,t]=[predicted[i], expected[i]]
+					if self.agent.archive[i] != 0:
+						predicted=self.agent.archive[i].predict(inp)
+						expected=stp1
+						err+=(predicted[i]-expected[i])**2
+						plots[i,t]=[predicted[i], expected[i]]
 			
 			figure()
 			for i in range(World.state_size):
@@ -392,7 +394,9 @@ class Cumule():
 				title("Problem #"+str(i))
 				plot(plots[i,:,:])
 			#show()
-			savefig("figure2.png")
+			savefig("archive_saved.png")
+			shutil.move("archive_saved.png", "archive_saved_%s%s.png" % (itime, FLAGS.suffix))
+			return 0.5*err/FLAGS.test_set_length
 
 		def archive_error(self,test_length,dims):
 			m = self.agent.getRandomMotor()
@@ -421,7 +425,7 @@ class Cumule():
 
 		def run(self, run_number, try_number):
 
-			logfile=open("prediction.log",'w',1)
+			logfile=open(FLAGS.logfile.replace(".log", "_%s_%s.log" % (run_number, try_number)),'w',1)
 			errHis = []
 
 			m = self.agent.getRandomMotor()
@@ -434,7 +438,7 @@ class Cumule():
 
 			min_archive_error=1000
 
-			for i in range(PHASE_1_LENGTH):
+			for itime in range(PHASE_1_LENGTH):
 				self.timestep+=1
 				
 				if self.timestep==FLAGS.timelimit+1 and FLAGS.timelimit!=-1:
@@ -445,26 +449,26 @@ class Cumule():
 				elif FLAGS.timelimit==-1 and min_archive_error!=1000:
 					return min_archive_error 
 
-				logfile.write("Timestep:"+str(i)+"\n")
+				logfile.write("Timestep:"+str(itime)+"\n")
 				
 				m = self.agent.getRandomMotor() 
 				s = self.world.resetState(m)
 
 
 				# Archive evaluating
-				if self.agent.archive.count(0)==0:				
+				if self.agent.archive.count(0) < 8:
 					if archive_changed==True:
-						new_error=self.archive_error(FLAGS.test_set_length, range(World.state_size))
+						new_error=self.test_archive(itime)
 						if min_archive_error>new_error:
 							logfile.write("New achieved archive error: "+str(new_error)+"\n")
 							min_archive_error=new_error
-					
-					archive_changed=False
+
+						archive_changed=False
 
 				distr=self.agent.problemsDistribution()
 				
 				# Check if there's a candidate solution in population
-				if i!=0:
+				if itime!=0:
 					bestEfforts=self.agent.minErrors(distr)
 					for problem, error, predictor in bestEfforts:
 						if error<FLAGS.archive_threshold:
@@ -545,11 +549,12 @@ class Cumule():
 					xlabel("Problem number")
 					ylabel("Predictors")
 
-					savefig("figure1_%s_%s.png" % (run_number, try_number))
+					savefig("figure1_%s.png" % FLAGS.suffix)
+					shutil.move("figure1_%s.png" % FLAGS.suffix, "figure1_%s_%s_%s.png" % (run_number, try_number, FLAGS.suffix))
 
 					#draw()
 
-				if i%FLAGS.evolution_period == 0:
+				if itime%FLAGS.evolution_period == 0:
 					a = random.randint(0, FLAGS.num_predictors-1)
 					b = random.randint(0, FLAGS.num_predictors-1)
 					while(a == b):
@@ -621,6 +626,6 @@ if __name__ == '__main__':
 	print "Min: "+str(np.min(errs))
 	print "Max: "+str(np.max(errs))
 
-	if FLAGS.show_test_error:
-		c.test_archive()
-		raw_input("Press Enter to exit")
+	# if FLAGS.show_test_error:
+	# 	c.test_archive()
+	# 	raw_input("Press Enter to exit")
