@@ -180,9 +180,8 @@ class Predictor():
 	def predict_masked(self,inputA):
 		input_masked = inputA[:]
 		for i in xrange(len(input_masked)):
-			input_masked *= self.inputMask[i]
+			input_masked[i] *= self.inputMask[i]
 		return self.predict(input_masked)
-
 
 class Agent(): 
 		def __init__(self):
