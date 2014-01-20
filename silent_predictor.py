@@ -178,9 +178,9 @@ class Predictor():
 		return self.net.activate(inputA)
 
 	def predict_masked(self,inputA):
-		input_masked = inputA[:]
-		for i in xrange(len(input_masked)):
-			input_masked[i] *= self.inputMask[i]
+		input_masked = []
+		for i in xrange(len(inputA)):
+			input_masked.append(inputA[i]*self.inputMask[i])
 		return self.predict(input_masked)
 
 class Agent(): 
@@ -434,9 +434,8 @@ class Cumule():
 					if self.agent.archive[i] != 0:
 						nonzero.append(i)
 						predicted=self.agent.archive[i].predict_masked(inp)
-						expected=stp1
-						err+=(predicted[i]-expected[i])**2
-						plots[i,t]=[predicted[i], expected[i]]
+						err+=(predicted[i]-stp1[i])**2
+						plots[i,t]=[predicted[i], stp1[i]]
 			
 			figure()
 			for i in range(World.state_size):
@@ -450,9 +449,9 @@ class Cumule():
 			figure()
 			num_errors = []
 			#print nonzero
-			for i in nonzero:
+			for non_0 in nonzero:
 				# fraction of incorrect bits in input mask over the total number of bits
-				diff = sum(list_diff(World.correct_masks[i], self.agent.archive[i].inputMask))*1.0/len(self.agent.archive[i].inputMask)
+				diff = sum(list_diff(World.correct_masks[non_0], self.agent.archive[non_0].inputMask))*1.0/len(self.agent.archive[non_0].inputMask)
 				#print i, World.correct_masks[i], self.agent.archive[i].inputMask, diff
 				num_errors.append(diff)
 			bar(nonzero, num_errors)
