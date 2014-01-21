@@ -477,7 +477,7 @@ class Cumule():
 				plot(plots[i,:,:])
 			#show()
 			savefig("archive_saved%s_0.png" % FLAGS.suffix)
-			shutil.move("archive_saved%s_0.png" % FLAGS.suffix, "archive_saved_%s%s_part0.png" % (itime, FLAGS.suffix))
+			shutil.move("archive_saved%s_0.png" % FLAGS.suffix, "archive_saved_%s_part0_%s.png" % (FLAGS.suffix, itime))
 
 			figure()
 			for i in range((World.state_size+1)/2, World.state_size):
@@ -486,7 +486,7 @@ class Cumule():
 				plot(plots[i,:,:])
 			#show()
 			savefig("archive_saved%s_1.png" % FLAGS.suffix)
-			shutil.move("archive_saved%s_1.png" % FLAGS.suffix, "archive_saved_%s%s_part1.png" % (itime, FLAGS.suffix))
+			shutil.move("archive_saved%s_1.png" % FLAGS.suffix, "archive_saved_%s_part1_%s.png" % (FLAGS.suffix, itime))
 
 			figure()
 			num_errors = []
@@ -498,7 +498,7 @@ class Cumule():
 				num_errors.append(diff)
 			bar(nonzero, num_errors)
 			savefig("archive_wrong_input_fractions_%s.png" % FLAGS.suffix)
-			shutil.move("archive_wrong_input_fractions_%s.png" % FLAGS.suffix, "wrong_input_fractions_%s_%s.png" % (itime, FLAGS.suffix))
+			shutil.move("archive_wrong_input_fractions_%s.png" % FLAGS.suffix, "wrong_input_fractions_%s_%s.png" % (FLAGS.suffix, itime))
 
 			return 0.5*err/FLAGS.test_set_length
 
