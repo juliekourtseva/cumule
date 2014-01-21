@@ -6,6 +6,7 @@ import pickle
 from copy import copy,deepcopy
 from matplotlib.pyplot import *
 import argparse
+from Tkinter import *
 
 import sys
 
@@ -33,14 +34,14 @@ parser.add_argument("timelimit",default=50,type=int)
 parser.add_argument("-n","--num_predictors",help="population size(default:50)",default=50,type=int)
 parser.add_argument("--runs",help="number of runs(default:1)",default=1,type=int)
 parser.add_argument("--epochs",help="number of epochs for each training(default:5)",default=5,type=int)
-parser.add_argument("-ts","--test_set_length",help="test set length(default:50)",default=50,type=int)
+parser.add_argument("-ts","--test_set_length",help="test set length(default:100)",default=100,type=int)
 parser.add_argument("-e","--evolution_period", help="evolution period(default:10)", type=int, default=10)
 parser.add_argument("-a","--archive_threshold", help="threshold for getting into the archive(default: 0.02)", type=float, default=0.02)
 parser.add_argument("-lr","--learning_rate", help="learning rate for predictors(default: 0.01)", type=float, default=0.01)
 parser.add_argument("-r","--replication", help="enable weights replication(default: no)",action="store_true", default=False)
 parser.add_argument("-lg","--logfile", help="log file name(default: prediction.log)",type=str, default="prediction.log")
 parser.add_argument("-i","--mutate_input", help="enable input mask mutation(default: yes)",action="store_true", default=True)
-parser.add_argument("--episode_length", help="number of samples per episode(default: 50)",action="store_true", default=10)
+parser.add_argument("--episode_length", help="number of samples per episode(default: 50)",action="store_true", default=50)
 parser.add_argument("--show_test_error", help="test archive and show the plot", action="store_true",default=False)
 parser.add_argument("--show_plots", help="show live plots", action="store_true",default=False)
 parser.add_argument("--sliding_training", help="use sliding window of examples", action="store_true",default=False)
@@ -153,17 +154,19 @@ class Predictor():
 
 
 class Agent(): 
-		def __init__(self):
+		def __init__(self, world):
 
 			#The agent has a population of M predictors. 
 			self.predictors = []
-			self.archive=[0 for i in range(World.state_size)]
+			self.state_size = world.state_size;
+			self.action_size = world.action_size;
+			self.archive=[0 for i in range(self.state_size)]
 			for i in range(FLAGS.num_predictors):
-				p=Predictor(World.state_size + World.action_size,World.state_size, FLAGS.learning_rate)
+				p=Predictor(self.state_size + self.action_size,self.state_size, FLAGS.learning_rate)
 				self.predictors.append(p)
 
 		def problemsDistribution(self):
-			r=[[] for i in range(World.state_size)]
+			r=[[] for i in range(self.state_size)]
 			for predictor in self.predictors:
 				r[predictor.problem].append(predictor)
 			return r
@@ -268,8 +271,8 @@ class Agent():
 			return [len(predictors) for predictors in distr]
 
 
-		def getRandomMotor(self):
-			return [random.uniform(0,1), random.uniform(0,1)]
+		def getRandomMotor(self, world):
+			return world.getRandomMotor()
 	
 		def storeDataPoint(self, inp, targ):
 
@@ -292,9 +295,9 @@ class Agent():
 			return ep
 
 		def createPredictor(self,hiddenLayerSize,problem):
-			p=Predictor(World.state_size + World.action_size,World.state_size, FLAGS.learning_rate)
+			p=Predictor(self.state_size + self.action_size,self.state_size, FLAGS.learning_rate)
 			p.problem=problem
-			p.outputMask = [0]*World.state_size
+			p.outputMask = [0]*self.state_size
 			p.outputMask[problem]=1
 
 			return p
@@ -310,8 +313,8 @@ class Agent():
 			self.predictors[loser] = newLoser
 
 			self.predictors[loser].learning_rate =  FLAGS.learning_rate
-			self.predictors[loser].ds = SupervisedDataSet(World.state_size+World.action_size, World.state_size)
-			self.predictors[loser].net = buildNetwork(World.state_size+World.action_size,World.state_size+World.action_size,World.state_size, bias=True)
+			self.predictors[loser].ds = SupervisedDataSet(self.state_size+self.action_size, self.state_size)
+			self.predictors[loser].net = buildNetwork(self.state_size+self.action_size,self.state_size+self.action_size,self.state_size, bias=True)
 			self.predictors[loser].trainer = BackpropTrainer(self.predictors[loser].net, self.predictors[loser].ds, learningrate=self.predictors[loser].learning_rate, verbose = False, weightdecay=WEIGHT_DECAY)
 		
 			
@@ -331,16 +334,18 @@ class Agent():
 							self.predictors[loser].inputMask[i] = 0
 
 			if random.uniform(0,1) < FLAGS.output_mutation_prob:
-				self.predictors[loser].outputMask = [0]*World.state_size
-				r = np.random.choice(range(World.state_size),p=distribution)
+				self.predictors[loser].outputMask = [0]*self.state_size
+				r = np.random.choice(range(self.state_size),p=distribution)
 				self.predictors[loser].outputMask[r] = 1
 				self.predictors[loser].problem=r
 
 class Cumule():
-		def __init__(self):
 
-			self.world = World()
-			self.agent = Agent()
+		def __init__(self):
+			fen = Tk()
+			fen.title('Billard')
+			self.world = World(fen)
+			self.agent = Agent(self.world)
 			self.popFitHistory=np.ndarray((FLAGS.num_predictors,BACKTIME))*0
 			self.timestep=0
 
@@ -364,46 +369,48 @@ class Cumule():
 			ylabel('fitness')
 
 		def test_archive(self):
-			plots=np.ndarray((World.state_size,FLAGS.test_set_length,2))*0
+			plots=np.ndarray((self.world.state_size,FLAGS.test_set_length,2))*0
 
 			#Generate random initial motor command between -1 and 1. 
-			m = self.agent.getRandomMotor()
+			m = self.agent.getRandomMotor(self.world)
 			#Geneate initial state for this motor command, and all else zero. 
-			s = self.world.updateState(m)
+			s = self.world.resetState()
 			
 			for t in range(FLAGS.test_set_length):#*********************************************
 
-				m = self.agent.getRandomMotor()
+				m = self.agent.getRandomMotor(self.world)
 				stp1 = self.world.updateState(m)
 				inp = np.concatenate((s,m), axis = 0)
 				s = stp1
 	
-				for i in range(World.state_size):
-					predicted=self.agent.archive[i].predict(inp)
-					expected=stp1
-					plots[i,t]=[predicted[i], expected[i]]
+				for i in range(self.world.state_size):
+					if self.agent.archive[i]:
+						predicted=self.agent.archive[i].predict(inp)
+						expected=stp1
+						plots[i,t]=[predicted[i], expected[i]]
 			
 			figure()
-			for i in range(World.state_size):
-				subplot(4,2,i)
+			for i in range(self.world.state_size):
+				subplot((self.world.state_size+1)/2,2,i+1)
 				title("Problem #"+str(i))
 				plot(plots[i,:,:])
 			show()
+			self.world.plotPrediction(plots)
 
 		def archive_error(self,test_length,dims):
-			m = self.agent.getRandomMotor()
+			m = self.agent.getRandomMotor(self.world)
 			s = self.world.updateState(m)
 			err=0
 
 
 			for t in range(test_length):#*********************************************
-				m = self.agent.getRandomMotor()
+				m = self.agent.getRandomMotor(self.world)
 				stp1 = self.world.updateState(m)
 				inp = np.concatenate((s,m), axis = 0)
 
 				s = stp1
 
-				predicted=np.ndarray(World.state_size)
+				predicted=np.ndarray(self.world.state_size)
 				expected=stp1
 	
 				for i in dims:
@@ -420,8 +427,8 @@ class Cumule():
 			logfile=open("prediction.log",'w',1)
 			errHis = []
 
-			m = self.agent.getRandomMotor()
-			s = self.world.updateState(m)
+			m = self.agent.getRandomMotor(self.world)
+			s = self.world.resetState()
 
 			archive_changed=False
 
@@ -446,14 +453,14 @@ class Cumule():
 
 				logfile.write("Timestep:"+str(i)+"\n")
 				
-				m = self.agent.getRandomMotor() 
-				s = self.world.resetState(m)
+				m = self.agent.getRandomMotor(self.world) 
+				s = self.world.resetState()
 
 
 				# Archive evaluating
 				if self.agent.archive.count(0)==0:				
 					if archive_changed==True:
-						new_error=self.archive_error(FLAGS.test_set_length, range(World.state_size))
+						new_error=self.archive_error(FLAGS.test_set_length, range(self.world.state_size))
 						if min_archive_error>new_error:
 							logfile.write("New achieved archive error: "+str(new_error)+"\n")
 							min_archive_error=new_error
@@ -488,10 +495,11 @@ class Cumule():
 									self.agent.archive[problem]=old_predictor
 
 
+
 				# training of predictors
 				for t in range(FLAGS.episode_length):#*********************************************
 
-					m = self.agent.getRandomMotor()
+					m = self.agent.getRandomMotor(self.world)
 					stp1 = self.world.updateState(m)
 					inp = np.concatenate((s,m), axis = 0)
 					self.agent.storeDataPoint(inp, stp1) 
@@ -530,7 +538,7 @@ class Cumule():
 					fig=subplot(2,3,4)
 					fig.clear()
 					title('Solved problems(blue means solved)')
-					barlist=bar(np.arange(0,World.state_size),[1 for k in self.agent.archive])
+					barlist=bar(np.arange(0,self.world.state_size),[1 for k in self.agent.archive])
 					for k,v in enumerate(self.agent.archive):
 						if v==0:
 							color='r'
@@ -540,7 +548,7 @@ class Cumule():
 
 					fig=subplot(2,3,5)
 					fig.clear()
-					bar(np.arange(0,World.state_size),self.agent.problemsAllocation(self.agent.problemsDistribution()))
+					bar(np.arange(0,self.world.state_size),self.agent.problemsAllocation(self.agent.problemsDistribution()))
 					xlabel("Problem number")
 					ylabel("Predictors")
 
