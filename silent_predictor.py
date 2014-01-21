@@ -60,6 +60,7 @@ parser.add_argument("--initial_input", help="input mask initialisation options (
 parser.add_argument("--punish_inputs_base", help="error = error*(base^(number of bits in input mask))/base^2.5 (default: 1.6)", type=float, default=1.6)
 parser.add_argument("--recombination_prob", help="input masks recombination probability (default: 0.0)", type=float, default=0.0)
 parser.add_argument("--population_test_length", help="number of time steps for which to test predictors in population (default: 10)", type=int, default=10)
+parser.add_argument("--train_error", help="use training error instead of test error for archiving predictors (default: false)", action="store_true", default=False)
 
 from new_world import World
 
@@ -470,8 +471,8 @@ class Cumule():
 						plots[i,t]=[predicted[i], stp1[i]]
 			
 			figure()
-			for i in range(World.state_size/2):
-				subplot(World.state_size/4,2,i)
+			for i in range((World.state_size+1)/2):
+				subplot((World.state_size+2)/4,2,i)
 				title("Problem #"+str(i))
 				plot(plots[i,:,:])
 			#show()
@@ -479,8 +480,8 @@ class Cumule():
 			shutil.move("archive_saved%s_0.png" % FLAGS.suffix, "archive_saved_%s%s_part0.png" % (itime, FLAGS.suffix))
 
 			figure()
-			for i in range(World.state_size/2, World.state_size):
-				subplot((World.state_size+2)/4,2,(i-World.state_size/2))
+			for i in range((World.state_size+1)/2, World.state_size):
+				subplot((World.state_size+2)/4,2,(i-(World.state_size+1)/2))
 				title("Problem #"+str(i))
 				plot(plots[i,:,:])
 			#show()
@@ -565,7 +566,10 @@ class Cumule():
 
 				# Check if there's a candidate solution in population
 				if itime!=0:
-					bestEfforts=self.agent.minTestErrors(distr, FLAGS.population_test_length, self.world)
+					if FLAGS.train_error:
+						bestEfforts=self.agent.minTrainErrors(distr)
+					else:
+						bestEfforts=self.agent.minTestErrors(distr, FLAGS.population_test_length, self.world)
 					for problem, error, predictor in bestEfforts:
 						if error<FLAGS.archive_threshold:
 							if self.agent.archive[problem]==0:
