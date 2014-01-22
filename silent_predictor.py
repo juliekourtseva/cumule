@@ -7,6 +7,7 @@ from copy import copy,deepcopy
 from matplotlib.pyplot import *
 import argparse
 import shutil
+import os
 
 import sys
 import atexit
@@ -55,7 +56,7 @@ parser.add_argument("--output_mutation_prob", help="output mutation probability 
 parser.add_argument("--replication_prob", help="weight copy probability per weight(default: 0.1)", type=float, default=0.1)
 parser.add_argument("--predictor_mutation_prob", help="tournament loser mutation probability(default: 1)", type=float, default=1.0)
 parser.add_argument("--punish_archive_factor", help="factor by which to multiply error for predictors already in archive (default: 15)", type=float, default=15)
-parser.add_argument("--suffix", help="suffix for log files (default: '')", type=str, default='')
+parser.add_argument("--outputdir", help="folder for log files (default: '')", type=str, default='')
 parser.add_argument("--initial_input", help="input mask initialisation options (default: ones, other options: random, correct)", type=str, default='ones')
 parser.add_argument("--punish_inputs_base", help="error = error*(base^(number of bits in input mask))/base^2.5 (default: 1.6)", type=float, default=1.6)
 parser.add_argument("--recombination_prob", help="input masks recombination probability (default: 0.0)", type=float, default=0.0)
@@ -303,7 +304,7 @@ class Agent():
 					r.append((problem,err,predictors[best]))	
 			return r
 
-		def minTestErrors(self,distr,test_length,test_world):
+		def minTestErrors(self,distr,test_length,test_world, itime, logfile):
 			r=[]
 			#Generate random initial motor command between -1 and 1. 
 			m = self.getRandomMotor()
@@ -321,6 +322,7 @@ class Agent():
 				for problem, predictors in enumerate(distr):
 					if len(predictors) != 0:
 						errors = [(stp1[problem] - p.predict_masked(inp)[problem])**2 for p in predictors]
+						errors = [e*1.0/test_length for e in errors]
 						if len(sum_errors[problem]) == 0:
 							sum_errors[problem] = errors
 						else:
@@ -329,6 +331,7 @@ class Agent():
 
 			for problem, predictors in enumerate(distr):
 				if len(predictors) != 0:
+					logfile.write("time %s, predictor %s, errors %s\n" % (itime, problem, sum_errors[problem]))
 					best = np.argmin(sum_errors[problem])
 					err = sum_errors[problem][best]
 					r.append((problem, err, predictors[best]))
@@ -476,8 +479,8 @@ class Cumule():
 				title("Problem #"+str(i))
 				plot(plots[i,:,:])
 			#show()
-			savefig("archive_saved%s_0.png" % FLAGS.suffix)
-			shutil.move("archive_saved%s_0.png" % FLAGS.suffix, "archive_saved_%s_part0_%s.png" % (FLAGS.suffix, itime))
+			savefig("%sarchive_saved_0.png" % FLAGS.outputdir)
+			shutil.move("%sarchive_saved_0.png" % FLAGS.outputdir, "%sarchive_saved_%s_part0.png" % (FLAGS.outputdir, itime))
 
 			figure()
 			for i in range((World.state_size+1)/2, World.state_size):
@@ -485,8 +488,8 @@ class Cumule():
 				title("Problem #"+str(i))
 				plot(plots[i,:,:])
 			#show()
-			savefig("archive_saved%s_1.png" % FLAGS.suffix)
-			shutil.move("archive_saved%s_1.png" % FLAGS.suffix, "archive_saved_%s_part1_%s.png" % (FLAGS.suffix, itime))
+			savefig("%sarchive_saved_1.png" % FLAGS.outputdir)
+			shutil.move("%sarchive_saved_1.png" % FLAGS.outputdir, "%sarchive_saved_part1_%s.png" % (FLAGS.outputdir, itime))
 
 			figure()
 			num_errors = []
@@ -497,8 +500,8 @@ class Cumule():
 				#print i, World.correct_masks[i], self.agent.archive[i].inputMask, diff
 				num_errors.append(diff)
 			bar(nonzero, num_errors)
-			savefig("archive_wrong_input_fractions_%s.png" % FLAGS.suffix)
-			shutil.move("archive_wrong_input_fractions_%s.png" % FLAGS.suffix, "wrong_input_fractions_%s_%s.png" % (FLAGS.suffix, itime))
+			savefig("%sarchive_wrong_input_fractions.png" % FLAGS.outputdir)
+			shutil.move("%sarchive_wrong_input_fractions.png" % FLAGS.outputdir, "%swrong_input_fractions_%s.png" % (FLAGS.outputdir, itime))
 
 			return 0.5*err/FLAGS.test_set_length
 
@@ -522,8 +525,7 @@ class Cumule():
 			return 0.5*err/test_length
 
 		def run(self, run_number, try_number):
-
-			logfile=open(FLAGS.logfile.replace(".log", "_%s_%s.log" % (run_number, try_number)),'w',1)
+			logfile=open(FLAGS.outputdir+FLAGS.logfile.replace(".log", "_%s_%s.log" % (run_number, try_number)),'w',1)
 			errHis = []
 
 			m = self.agent.getRandomMotor()
@@ -569,7 +571,7 @@ class Cumule():
 					if FLAGS.train_error:
 						bestEfforts=self.agent.minTrainErrors(distr)
 					else:
-						bestEfforts=self.agent.minTestErrors(distr, FLAGS.population_test_length, self.world)
+						bestEfforts=self.agent.minTestErrors(distr, FLAGS.population_test_length, self.world, itime, logfile)
 					for problem, error, predictor in bestEfforts:
 						if error<FLAGS.archive_threshold:
 							if self.agent.archive[problem]==0:
@@ -654,8 +656,8 @@ class Cumule():
 					xlabel("Problem number")
 					ylabel("Predictors")
 
-					savefig("figure1_%s.png" % FLAGS.suffix)
-					shutil.move("figure1_%s.png" % FLAGS.suffix, "figure1_%s_%s_%s.png" % (run_number, try_number, FLAGS.suffix))
+					savefig("%sfigure1.png" % FLAGS.outputdir)
+					shutil.move("%sfigure1.png" % FLAGS.outputdir, "%sfigure1_%s_%s.png" % (FLAGS.outputdir, run_number, try_number))
 
 					#draw()
 
@@ -710,7 +712,9 @@ if __name__ == '__main__':
 	#ion()
 
 	FLAGS=parser.parse_args()
-
+	if FLAGS.outputdir != "":
+		os.mkdir(FLAGS.outputdir)
+		FLAGS.outputdir += "/"
 
 	fl=vars(FLAGS)
 	for k in sorted(fl.iterkeys()):
