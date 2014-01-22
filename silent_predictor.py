@@ -657,9 +657,9 @@ class Cumule():
 					winner = None
 					loser = None
 
-					if self.agent.archive[a] != 0:
+					if self.agent.archive[self.agent.predictors[a].problem] != 0:
 						fit1 *= FLAGS.punish_archive_factor
-					if self.agent.archive[b] != 0:
+					if self.agent.archive[self.agent.predictors[b].problem] != 0:
 						fit2 *= FLAGS.punish_archive_factor
 
 					if fit1 > fit2:
