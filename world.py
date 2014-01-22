@@ -22,7 +22,7 @@ from pybrain.structure import TanhLayer, LinearLayer
 class World(Frame): 
     couleurs = ['cornflower blue', 'slate blue', 'cadet blue','aquamarine','light slate blue', 'medium blue', 'blue', 'midnight blue', 'turquoise','deep sky blue','cyan']    
 
-    
+    # constructor: initialises a world of size larg x haut with nboules balls
     def __init__(self, master=None, larg=300, haut=300, nboules=5, tempo=0.0005):
         Frame.__init__(self, master)
 
@@ -32,18 +32,18 @@ class World(Frame):
         self.haut = haut
         self.nboules = nboules
         self.tempo = tempo
-        self.state_size=5*nboules-2
-        self.action_size=2
+        self.state_size=5*nboules-2 # states are (x,y,dx,dy,r) for the 5 balls except for boules[0] (dx,dy are given then by m)
+        self.action_size=2          # motor command is the velocity [dx,dy] of boules[0]
         #Create world data structures 
         self.s = [0]*(self.state_size-2)    #CURRENT STATE 
         self.stp1 = [0]*(self.state_size-2) #TEMPORARY STATE. 
-        self.m = [];
-        self.boules = []
+        self.m = [];                        #last motor command
+        self.boules = []                    # the actual states of the balls
 
-        # creation d'un layout_manager sur self
+        # creation of a layout_manager
         self.grid()
  
-        # creation du canvas
+        # creation of the canvas to plot the world and the balls
         self.can = Canvas(self, width=self.larg, height=self.haut, bg='ivory')
         self.can.grid(sticky="nsew")
         self.resetState()
@@ -52,22 +52,22 @@ class World(Frame):
 
 
 
+    # reset the balls to new states (new positions, velocities and radius)
     def resetState(self):
-        # Creation des "nboules" boules et enregistrement dans la liste self.boules
+        #clear the canvas
         self.can.delete(ALL)
-
-
         self.boules = []
+
         for i in xrange(0,self.nboules):
             if i==0:
                 r=30;
             else:
-                r=random.randint(15,30)  # = rayon de la boule
+                r=random.randint(15,30)  # = ball radius
 
-            dz = random.uniform(0.5,2.5)  # = pas d'avancement de la boule
-            c = random.uniform(0,2*pi)  # = direction d'avancement (de 0 a 2*pi radians)
-            dy, dx = dz*sin(c), dz*cos(c)  # = increments d'avancement selon x et y
-            # trouver pour la boule un emplacement qui ne soit pas deja pris par une boule precedente
+            dz = random.uniform(0.5,5)  # = velocity magnitude
+            c = random.uniform(0,2*pi)  # = velocity direction ( 0 to 2*pi radians)
+            dy, dx = dz*sin(c), dz*cos(c)  # = velocity vector along directions x and y
+            # find a position for the ball which does not overlap with the previous balls' positions
             while True:
                 x=random.randint(r,self.larg-r)
                 y=random.randint(r,self.haut-r)
@@ -77,6 +77,7 @@ class World(Frame):
                         ok=False
                 if ok:
                     break
+            # plotting the balls
             # attention: changement d'ordonnees necessaire: dans le canevas, l'axe d'ordonnee va vers le bas
             # en plus: (y,x) est le centre de la boule, mais les parametres a passer sont differents
             if i==0:
@@ -84,7 +85,7 @@ class World(Frame):
             else:
                 boule = self.can.create_oval(x-r, self.haut-(y+r), x+r, self.haut-(y-r), width=2, fill=World.couleurs[i])
  
-            # enregistrer la nouvelle boule definie dans la liste self.boules
+            # add this new ball to the list of balls
             self.boules.append([boule,x,y,dx,dy,r])
             if i==0:
                 self.s[i*5:(i+1)*5-2] = [x/self.larg,y/self.haut,r/30.]
@@ -97,6 +98,7 @@ class World(Frame):
 
 
 
+    # plotting when we test the expected balls and the predicted balls. plots is a vector of [predicted[i],[expected[i]]
     def plotPrediction(self, plots):
         self.can.delete(ALL)
         dimmax = len(plots)
@@ -109,7 +111,9 @@ class World(Frame):
             [yp, ye]= plots[i,t]*self.haut
             i=2;
             [rp, re]= plots[i,t]*30.
+            # expected ball
             boule = self.can.create_oval(xe-re, self.haut-(ye+re), xe+re, self.haut-(ye-re), width=2, fill='red')
+            # predicted ball
             boule = self.can.create_oval(xp-rp, self.haut-(yp+rp), xp+rp, self.haut-(yp-rp), width=4, outline='red')
 
             for iboule in range(self.nboules-1):
@@ -123,13 +127,14 @@ class World(Frame):
                 boule = self.can.create_oval(xe-re, self.haut-(ye+re), xe+re, self.haut-(ye-re), width=2, fill=World.couleurs[iboule])
                 boule = self.can.create_oval(xp-rp, self.haut-(yp+rp), xp+rp, self.haut-(yp-rp), width=4, outline=World.couleurs[iboule])
 
-            # rafraichir l'affichage
+            # refresh display
             time.sleep(0.5)
             self.master.update()
             self.can.delete(ALL)
 
            
 
+    #computes the direction of the velocity vector
     def direction(self, dy, dx):
         """donne l'angle de 0 a 2*pi donne par les increments (signes) dy et dx"""
         a = atan(abs(dy/dx))
@@ -148,17 +153,22 @@ class World(Frame):
 
 
     def updateState(self, m, plot=1):
+        self.s =self.stp1;
         try:
+            # for each ball
             for i,(boule,x,y,dx,dy,r) in zip(range(0,len(self.boules)),self.boules):
         
-                # calcul de la position suivante de la boule i
+                #  compute its next position
                 if i==0:
-                    x, y = x+m[0], y+m[1]
-                else:
-                    x, y = x+dx, y+dy
+                    [dx, dy] = m
+
+                x, y = x+dx, y+dy
         
-                # corrige la trajectoire si collisions avec les autres boules
+                # changes the trajectory if collision with other balls
                 for j,(boule2,x2,y2,dx2,dy2,r2) in zip(range(0,len(self.boules)),self.boules):
+                    if j==0:
+                        [dx2, dy2] = m
+
                     if j!=i:
         
                         # calcul de la distance entre les centres des 2 boules i et j
@@ -206,19 +216,17 @@ class World(Frame):
                 self.boules[i]=[boule,x,y,dx,dy,r]
                 if i==0:
                     self.stp1[i*5:(i+1)*5-2] = [x/self.larg,y/self.haut,r/30.]
-                    self.m= [dx,dy];
+                    self.m= m;
                 else:
                     self.stp1[i*5-2:(i+1)*5-2] = [x/self.larg,y/self.haut,dx/5.,dy/5.,r/30.]
 
+            #plotting
             if plot==1:
                 # temporisation pour ralentir l'affichage
                 time.sleep(self.tempo)
                 # rafraichir l'affichage
                 self.master.update()
 
-            # print "UPDATESTATE"
-            # print len(self.s)
-            # print len(self.stp1)
             return self.stp1
         except:
             print "WORLD:UPDATESTATE error"
@@ -232,12 +240,14 @@ class World(Frame):
 
     
     def getRandomMotor(self):
-        if random.uniform(0,1)<0.3 or not self.m:
+        # generates only a new random motor command once every 5 steps, to keep smooth movements
+        if random.uniform(0,1)<0.2 or not self.m:
             dz = random.uniform(0.5,5)  # = pas d'avancement de la boule
             c = random.uniform(0,2*pi)  # = direction d'avancement (de 0 a 2*pi radians)
             dy, dx = dz*sin(c), dz*cos(c)  # = increments d'avancement selon x et y
         else:
             [dx, dy] = self.m 
 
+        self.m= [dx,dy];
         return [dx,dy]
     
