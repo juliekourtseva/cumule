@@ -56,15 +56,20 @@ parser.add_argument("--output_mutation_prob", help="output mutation probability 
 parser.add_argument("--replication_prob", help="weight copy probability per weight(default: 0.1)", type=float, default=0.1)
 parser.add_argument("--predictor_mutation_prob", help="tournament loser mutation probability(default: 1)", type=float, default=1.0)
 parser.add_argument("--punish_archive_factor", help="factor by which to multiply error for predictors already in archive (default: 15)", type=float, default=15)
+parser.add_argument("--punish_population_factor", help="factor by which to encourage output mask mutation (default: 2)", type=float, default=2)
 parser.add_argument("--outputdir", help="folder for log files (default: '')", type=str, default='')
 parser.add_argument("--initial_input", help="input mask initialisation options (default: ones, other options: random, correct)", type=str, default='ones')
 parser.add_argument("--punish_inputs_base", help="error = error*(base^(number of bits in input mask))/base^2.5 (default: 1.6)", type=float, default=1.6)
 parser.add_argument("--recombination_prob", help="input masks recombination probability (default: 0.0)", type=float, default=0.0)
 parser.add_argument("--population_test_length", help="number of time steps for which to test predictors in population (default: 10)", type=int, default=10)
 parser.add_argument("--train_error", help="use training error instead of test error for archiving predictors (default: false)", action="store_true", default=False)
+parser.add_argument("--old_world", help="use old 8-dimensional world (default: false)", action="store_true", default=False)
+parser.add_argument("--check_input_mask", help="plot a graph of how many bits are wrong in the input masks of archived predictors", action="store_true", default=False)
 
-from new_world import World
+from world import World as OldWorld
+from new_world import World as NewWorld
 
+World = None
 
 def list_diff(list1, list2):
 	list_out = list1[:]
@@ -423,7 +428,7 @@ class Agent():
 			problem_fraction = allocation[current_problem]
 
 			# if there are more predictors for this output, increase the probability of output mask mutation
-			if random.uniform(0,1) < (FLAGS.output_mutation_prob * (1 + problem_fraction)**2):
+			if random.uniform(0,1) < (FLAGS.output_mutation_prob * (1 + problem_fraction)**FLAGS.punish_population_factor):
 				self.predictors[loser].outputMask = [0]*World.state_size
 				r = np.random.choice(range(World.state_size),p=distribution)
 				self.predictors[loser].outputMask[r] = 1
@@ -433,7 +438,6 @@ class Agent():
 
 class Cumule():
 		def __init__(self):
-
 			self.world = World()
 			self.agent = Agent()
 			self.popFitHistory=np.ndarray((FLAGS.num_predictors,BACKTIME))*0
@@ -493,7 +497,7 @@ class Cumule():
 			return mse
 
 		def archive_error(self, test_length, dims):
-			_, _, mse = test_distribution([[p] for p in self.archive], FLAGS.test_set_length, self, test_world,
+			_, _, mse = test_distribution([[p] for p in self.agent.archive], FLAGS.test_set_length, self.agent, self.world,
 										  dims, plot_data=False, get_best=False)
 			return mse
 
@@ -530,7 +534,7 @@ class Cumule():
 				# Archive evaluating
 				if self.agent.archive.count(0) < World.state_size:
 					if archive_changed==True:
-						new_error=self.test_archive(itime)
+						new_error=self.test_archive(itime, FLAGS.check_input_mask)
 						if self.agent.archive.count(0) == 0:
 							if min_archive_error>new_error:
 								logfile.write("New achieved archive error: "+str(new_error)+"\n")
@@ -589,6 +593,9 @@ class Cumule():
 				distr=self.agent.problemsDistribution()
 				errHis.append(self.agent.minimumErrors(distr))
 
+				# don't store too much error history, for performance reasons
+				if len(errHis) > BACKTIME:
+					errHis = errHis[-BACKTIME:]
 
 				if FLAGS.show_plots:
 					#Plot the raw errors of the predictors in the population 
@@ -605,12 +612,12 @@ class Cumule():
 					xlabel('episodes(last '+str(BACKTIME)+')')
 					ylabel('errors')
 
-					fig=subplot(2,3,2)
-					fig.clear()
-					title('Minimum errors on outputs')
-					plot(errHis)
-					xlabel('episodes(all time)')
-					ylabel('errors')
+					# fig=subplot(2,3,2)
+					# fig.clear()
+					# title('Minimum errors on outputs')
+					# plot(errHis)
+					# xlabel('episodes(all time)')
+					# ylabel('errors')
 
 					fig=subplot(2,3,4)
 					fig.clear()
@@ -703,7 +710,7 @@ def test_distribution(distr, test_set_length, test_agent, test_world, dims, plot
 
 				# collect data for plotting purposes
 				if plot_data:
-					plots[predicted,t]=[predicted[problem], stp1[problem]]
+					plots[problem, t]=[predicted[problem], stp1[problem]]
 
 				# collect data to get the best predictor for an output
 				if get_best:
@@ -733,6 +740,11 @@ if __name__ == '__main__':
 		except:
 			pass
 		FLAGS.outputdir += "/"
+
+	if FLAGS.old_world:
+		World = OldWorld
+	else:
+		World = NewWorld
 
 	fl=vars(FLAGS)
 	for k in sorted(fl.iterkeys()):
