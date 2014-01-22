@@ -431,7 +431,7 @@ class Cumule():
 			ylabel('fitness')
 
 		def test_archive(self, itime, compare_input_bits=False):
-			plots, _, mse = test_distribution([[p] for p in self.archive], FLAGS.test_set_length, self.agent, self.world,
+			plots, _, mse = test_distribution([[p] for p in self.agent.archive], FLAGS.test_set_length, self.agent, self.world,
 											  range(self.world.state_size), plot_data=True, get_best=False)
 
 			num_figures = (World.state_size+7)/8
@@ -440,10 +440,9 @@ class Cumule():
 				figure()
 				for i in xrange(0, 8):
 					j = (fig_num*8)+i
-					subplot(4, 2, j)
+					subplot(4, 2, i)
 					title("Problem #"+str(j))
 					plot(plots[j,:,:])
-			#show()
 				savefig("%sarchive_saved_%s.png" % (FLAGS.outputdir, fig_num))
 				shutil.move("%sarchive_saved_%s.png" % (FLAGS.outputdir, fig_num),
 							"%sarchive_saved_%s_part%s.png" % (FLAGS.outputdir, itime, fig_num))
@@ -451,7 +450,7 @@ class Cumule():
 			if compare_input_bits:
 				figure()
 				num_errors = []
-				nonzero = [a for a in xrange(World.state_size) if self.agent.archive[i] != 0]
+				nonzero = [a for a in xrange(World.state_size) if self.agent.archive[a] != 0]
 
 				#print nonzero
 				for non_0 in nonzero:
@@ -664,14 +663,15 @@ def test_distribution(distr, test_set_length, test_agent, test_world, dims, plot
 		s = stp1
 
 		for problem, predictors in enumerate(distr):
-			if (len(predictors) != 0) and (problem in dims):
+			if (problem in dims) and (len(predictors) != 0) and (predictors[0] != 0):
+				# this is used for the archive, where there is at most 1 predictor per output
 				predicted=predictors[0].predict_masked(inp)
-				# get mean squared error
+				# to get the mean squared error
 				err+=(predicted[problem]-stp1[problem])**2
 
 				# collect data for plotting purposes
 				if plot_data:
-					plots[i,t]=[predicted[problem], stp1[problem]]
+					plots[predicted,t]=[predicted[problem], stp1[problem]]
 
 				# collect data to get the best predictor for an output
 				if get_best:
