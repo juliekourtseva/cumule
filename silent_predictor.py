@@ -151,7 +151,7 @@ class Predictor():
 
 		return e
 
-	def getFitness(self, type, rewardMinimal=True):
+	def getTrainFitness(self, fitness_type, rewardMinimal=True):
 		if rewardMinimal:
 			# Trying to get a difference of between 10 and 20 for 8 bits set vs 2.5 bits set
 			# 2.5 is roughly the average number of bits that the "correct" input mask would use in this case
@@ -160,11 +160,11 @@ class Predictor():
 			errMultiplier = 1
 
 		fit = 0 
-		#Fitness function 1 Chrisantha's attempt 
-		if type == 0:#SIMPLE MINIMIZE PREDICTION ERROR FITNESS FUNCTION FOR PREDICTORS. 
+		#Fitness function 1 Chrisantha's attempt
+		if fitness_type == 0:#SIMPLE MINIMIZE PREDICTION ERROR FITNESS FUNCTION FOR PREDICTORS.
 #           fit = -self.dError/(1.0*self.error)
 			fit = -self.error*errMultiplier
-		elif type == 1:
+		elif fitness_type == 1:
 			#Fitness function 2 Mai's attempt (probably need to use adaptive thresholds for this to be ok)
 			if self.error > ERROR_THRESHOLD and self.dError > DERROR_THRESHOLD:
 				fit = 0
@@ -173,6 +173,34 @@ class Predictor():
 
 		self.fitness = fit
 		return fit 
+
+	def getTestFitness(self, fitness_type, test_length, test_agent, test_world, rewardMinimal=True):
+		distr = [[] for i in xrange(test_world.state_size)]
+		distr[self.problem] = [self]
+
+		_, _, mse = test_distribution(distr, test_length, test_agent, test_world, [self.problem], plot_data=False, get_best=False)
+
+		if rewardMinimal:
+			# Trying to get a difference of between 10 and 20 for 8 bits set vs 2.5 bits set
+			# 2.5 is roughly the average number of bits that the "correct" input mask would use in this case
+			errMultiplier = FLAGS.punish_inputs_base**(sum(self.inputMask)-2.5)
+		else:
+			errMultiplier = 1
+
+		fit = 0
+		#Fitness function 1 Chrisantha's attempt 
+		if fitness_type == 0:#SIMPLE MINIMIZE PREDICTION ERROR FITNESS FUNCTION FOR PREDICTORS. 
+#           fit = -self.dError/(1.0*self.error)
+			fit = -mse*errMultiplier
+		elif fitness_type == 1:
+			#Fitness function 2 Mai's attempt (probably need to use adaptive thresholds for this to be ok)
+			if mse > ERROR_THRESHOLD and self.dError > DERROR_THRESHOLD:
+				fit = 0
+			else:
+				fit = 1
+
+		self.fitness = fit
+		return fit
 
 	def storeDataPoint(self, inputA, targetA):
 		self.ds.addSample(inputA, targetA)
@@ -612,8 +640,12 @@ class Cumule():
 					while(a == b):
 						b = random.randint(0, FLAGS.num_predictors-1)
 
-					fit1  = self.agent.predictors[a].getFitness(0) #0 = Fitness type Chrisantha, 1 = Fitness type Mai 
-					fit2  = self.agent.predictors[b].getFitness(0)
+					if FLAGS.train_error:
+						fit1 = self.agent.predictors[a].getTrainFitness(0) #0 = Fitness type Chrisantha, 1 = Fitness type Mai
+						fit2 = self.agent.predictors[b].getTrainFitness(0)
+					else:
+						fit1 = self.agent.predictors[a].getTestFitness(0, 5, self.agent, self.world, rewardMinimal=True)
+						fit2 = self.agent.predictors[b].getTestFitness(0, 5, self.agent, self.world, rewardMinimal=True)
 
 					winner = None
 					loser = None
