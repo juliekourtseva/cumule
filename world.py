@@ -54,6 +54,7 @@ class World():
         dimO1 = self.f1['out'].dim;
         dimO2 = self.f2['out'].dim;
         output=[];
+        self.s =self.stp1;
         self.stp1=[]
 
         input    = m+self.s[0:NUMI1-2]+m+self.s[NUMI1-2:2*NUMI1-4]+m+self.s[2*NUMI1-4:3*NUMI1-6];
@@ -73,7 +74,7 @@ class World():
 
         for i in range(NUM_DIMENSIONS):
             self.stp1.append(output[i])
-
+        
         return self.stp1
     
     def getRandomMotor(self):
