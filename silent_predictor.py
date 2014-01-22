@@ -304,30 +304,11 @@ class Agent():
 					r.append((problem,err,predictors[best]))	
 			return r
 
-		def minTestErrors(self,distr,test_length,test_world, itime, logfile):
+		def minTestErrors(self, distr, test_length, test_world, itime, logfile):
 			r=[]
-			#Generate random initial motor command between -1 and 1. 
-			m = self.getRandomMotor()
-			#Generate initial state for this motor command, and all else zero. 
-			s = test_world.updateState(m)
 
-			sum_errors = defaultdict(list)
-			for t in range(test_length):#*********************************************
-
-				m = self.getRandomMotor()
-				stp1 = test_world.updateState(m)
-				inp = np.concatenate((s,m), axis = 0)
-				s = stp1
-
-				for problem, predictors in enumerate(distr):
-					if len(predictors) != 0:
-						errors = [(stp1[problem] - p.predict_masked(inp)[problem])**2 for p in predictors]
-						errors = [e*1.0/test_length for e in errors]
-						if len(sum_errors[problem]) == 0:
-							sum_errors[problem] = errors
-						else:
-							for k in xrange(len(predictors)):
-								sum_errors[problem][k] += errors[k]
+			_, sum_errors, _ = test_distribution(distr, FLAGS.test_set_length, self, test_world,
+												 range(test_world.state_size), plot_data=False, get_best=True)
 
 			for problem, predictors in enumerate(distr):
 				if len(predictors) != 0:
@@ -449,80 +430,45 @@ class Cumule():
 			xlabel('generations')
 			ylabel('fitness')
 
-		def test_archive(self, itime):
-			plots=np.ndarray((World.state_size,FLAGS.test_set_length,2))*0
+		def test_archive(self, itime, compare_input_bits=False):
+			plots, _, mse = test_distribution([[p] for p in self.archive], FLAGS.test_set_length, self.agent, self.world,
+											  range(self.world.state_size), plot_data=True, get_best=False)
 
-			#Generate random initial motor command between -1 and 1. 
-			m = self.agent.getRandomMotor()
-			#Geneate initial state for this motor command, and all else zero. 
-			s = self.world.updateState(m)
-			err=0
-			
-			for t in range(FLAGS.test_set_length):#*********************************************
+			num_figures = (World.state_size+7)/8
 
-				m = self.agent.getRandomMotor()
-				stp1 = self.world.updateState(m)
-				inp = np.concatenate((s,m), axis = 0)
-				s = stp1
-
-				nonzero = []
-				for i in range(World.state_size):
-					if self.agent.archive[i] != 0:
-						nonzero.append(i)
-						predicted=self.agent.archive[i].predict_masked(inp)
-						err+=(predicted[i]-stp1[i])**2
-						plots[i,t]=[predicted[i], stp1[i]]
-			
-			figure()
-			for i in range((World.state_size+1)/2):
-				subplot((World.state_size+2)/4,2,i)
-				title("Problem #"+str(i))
-				plot(plots[i,:,:])
+			for fig_num in xrange(num_figures):
+				figure()
+				for i in xrange(0, 8):
+					j = (fig_num*8)+i
+					subplot(4, 2, j)
+					title("Problem #"+str(j))
+					plot(plots[j,:,:])
 			#show()
-			savefig("%sarchive_saved_0.png" % FLAGS.outputdir)
-			shutil.move("%sarchive_saved_0.png" % FLAGS.outputdir, "%sarchive_saved_%s_part0.png" % (FLAGS.outputdir, itime))
+				savefig("%sarchive_saved_%s.png" % (FLAGS.outputdir, fig_num))
+				shutil.move("%sarchive_saved_%s.png" % (FLAGS.outputdir, fig_num),
+							"%sarchive_saved_%s_part%s.png" % (FLAGS.outputdir, itime, fig_num))
 
-			figure()
-			for i in range((World.state_size+1)/2, World.state_size):
-				subplot((World.state_size+2)/4,2,(i-(World.state_size+1)/2))
-				title("Problem #"+str(i))
-				plot(plots[i,:,:])
-			#show()
-			savefig("%sarchive_saved_1.png" % FLAGS.outputdir)
-			shutil.move("%sarchive_saved_1.png" % FLAGS.outputdir, "%sarchive_saved_part1_%s.png" % (FLAGS.outputdir, itime))
+			if compare_input_bits:
+				figure()
+				num_errors = []
+				nonzero = [a for a in xrange(World.state_size) if self.agent.archive[i] != 0]
 
-			figure()
-			num_errors = []
-			#print nonzero
-			for non_0 in nonzero:
-				# fraction of incorrect bits in input mask over the total number of bits
-				diff = sum(list_diff(World.correct_masks[non_0], self.agent.archive[non_0].inputMask))*1.0/len(self.agent.archive[non_0].inputMask)
-				#print i, World.correct_masks[i], self.agent.archive[i].inputMask, diff
-				num_errors.append(diff)
-			bar(nonzero, num_errors)
-			savefig("%sarchive_wrong_input_fractions.png" % FLAGS.outputdir)
-			shutil.move("%sarchive_wrong_input_fractions.png" % FLAGS.outputdir, "%swrong_input_fractions_%s.png" % (FLAGS.outputdir, itime))
+				#print nonzero
+				for non_0 in nonzero:
+					# fraction of incorrect bits in input mask over the total number of bits
+					diff = sum(list_diff(World.correct_masks[non_0], self.agent.archive[non_0].inputMask))*1.0/len(self.agent.archive[non_0].inputMask)
+					#print i, World.correct_masks[i], self.agent.archive[i].inputMask, diff
+					num_errors.append(diff)
+				bar(nonzero, num_errors)
+				savefig("%sarchive_wrong_input_fractions.png" % FLAGS.outputdir)
+				shutil.move("%sarchive_wrong_input_fractions.png" % FLAGS.outputdir, "%swrong_input_fractions_%s.png" % (FLAGS.outputdir, itime))
 
-			return 0.5*err/FLAGS.test_set_length
+			return mse
 
 		def archive_error(self, test_length, dims):
-			m = self.agent.getRandomMotor()
-			s = self.world.updateState(m)
-			err=0
-
-			for t in range(test_length):#*********************************************
-				m = self.agent.getRandomMotor()
-				stp1 = self.world.updateState(m)
-				inp = np.concatenate((s,m), axis = 0)
-				s = stp1
-				predicted=np.ndarray(World.state_size)
-				expected=stp1
-
-				for i in dims:
-					predicted[i]=self.agent.archive[i].predict_masked(inp)[i]
-					err+=(predicted[i]-expected[i])**2
-
-			return 0.5*err/test_length
+			_, _, mse = test_distribution([[p] for p in self.archive], FLAGS.test_set_length, self, test_world,
+										  dims, plot_data=False, get_best=False)
+			return mse
 
 		def run(self, run_number, try_number):
 			logfile=open(FLAGS.outputdir+FLAGS.logfile.replace(".log", "_%s_%s.log" % (run_number, try_number)),'w',1)
@@ -701,6 +647,43 @@ class Cumule():
 			
 			logfile.close()
 
+def test_distribution(distr, test_set_length, test_agent, test_world, dims, plot_data=False, get_best=False):
+	#Generate random initial motor command between -1 and 1.
+	m = test_agent.getRandomMotor()
+	#Generate initial state for this motor command, and all else zero.
+	s = test_world.updateState(m)
+	err=0
+
+	plots=np.ndarray((test_world.state_size, test_set_length, 2))*0
+	sum_errors = defaultdict(list)
+	for t in range(FLAGS.test_set_length):
+
+		m = test_agent.getRandomMotor()
+		stp1 = test_world.updateState(m)
+		inp = np.concatenate((s,m), axis = 0)
+		s = stp1
+
+		for problem, predictors in enumerate(distr):
+			if (len(predictors) != 0) and (problem in dims):
+				predicted=predictors[0].predict_masked(inp)
+				# get mean squared error
+				err+=(predicted[problem]-stp1[problem])**2
+
+				# collect data for plotting purposes
+				if plot_data:
+					plots[i,t]=[predicted[problem], stp1[problem]]
+
+				# collect data to get the best predictor for an output
+				if get_best:
+					errors = [(stp1[problem] - p.predict_masked(inp)[problem])**2 for p in predictors]
+					errors = [e*1.0/test_set_length for e in errors]
+					if len(sum_errors[problem]) == 0:
+						sum_errors[problem] = errors
+					else:
+						for k in xrange(len(predictors)):
+							sum_errors[problem][k] += errors[k]
+	return plots, sum_errors, 0.5*err/test_set_length
+
 global_errs=[]
 def print_global_errs():
 	print "Average: "+str(np.mean(global_errs))
@@ -713,7 +696,10 @@ if __name__ == '__main__':
 
 	FLAGS=parser.parse_args()
 	if FLAGS.outputdir != "":
-		os.mkdir(FLAGS.outputdir)
+		try:
+			os.mkdir(FLAGS.outputdir)
+		except:
+			pass
 		FLAGS.outputdir += "/"
 
 	fl=vars(FLAGS)
