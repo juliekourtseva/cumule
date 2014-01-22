@@ -466,12 +466,15 @@ class Cumule():
 			plots, _, mse = test_distribution([[p] for p in self.agent.archive], FLAGS.test_set_length, self.agent, self.world,
 											  range(self.world.state_size), plot_data=True, get_best=False)
 
+			# use as many figures as necessary containing 8 plots each
 			num_figures = (World.state_size+7)/8
 
 			for fig_num in xrange(num_figures):
 				figure()
 				for i in xrange(0, 8):
 					j = (fig_num*8)+i
+					if j >= World.state_size:
+						break
 					subplot(4, 2, i)
 					title("Problem #"+str(j))
 					plot(plots[j,:,:])
