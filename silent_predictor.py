@@ -47,7 +47,7 @@ parser.add_argument("-lr","--learning_rate", help="learning rate for predictors(
 parser.add_argument("-r","--replication", help="enable weights replication(default: no)",action="store_true", default=False)
 parser.add_argument("-lg","--logfile", help="log file name(default: prediction.log)",type=str, default="prediction.log")
 parser.add_argument("-i","--disable_input_mutation", help="disable input mask mutation(default: false)",action="store_true", default=False)
-parser.add_argument("--episode_length", help="number of samples per episode(default: 50)",action="store_true", default=10)
+parser.add_argument("--episode_length", help="number of samples per episode(default: 50)",type=int, default=50)
 parser.add_argument("--show_test_error", help="test archive and show the plot", action="store_true",default=False)
 parser.add_argument("--show_plots", help="show live plots", action="store_true",default=False)
 parser.add_argument("--sliding_training", help="use sliding window of examples", action="store_true",default=False)
@@ -65,6 +65,7 @@ parser.add_argument("--population_test_length", help="number of time steps for w
 parser.add_argument("--train_error", help="use training error instead of test error for archiving predictors (default: false)", action="store_true", default=False)
 parser.add_argument("--old_world", help="use old 8-dimensional world (default: false)", action="store_true", default=False)
 parser.add_argument("--check_input_mask", help="plot a graph of how many bits are wrong in the input masks of archived predictors", action="store_true", default=False)
+parser.add_argument("--disable_evolution", help="do not use evolution - just train (default: False)", action="store_true", default=False)
 
 from world import World as OldWorld
 from new_world import World as NewWorld
@@ -103,8 +104,9 @@ class Predictor():
 			self.inputMask = [random.randint(0, 1) for i in range(inSize)]
 		elif FLAGS.initial_input == INITIAL_INPUT_ALL_ONES:
 			self.inputMask = [1]*inSize
-		self.error = 0
-		self.errorHistory = []
+		self.trainError = 0
+		self.testError = 0
+		self.trainErrorHistory = []
 		self.dErrorHistory = []
 		self.slidingError = 0
 		self.dError = 0
@@ -139,20 +141,20 @@ class Predictor():
 
 		#Update possible fitness indicators. 
 		#Error now
-		self.error = e
+		self.trainError = e
 		#Entire error history
-		if len(self.errorHistory) < 5:  
-			self.errorHistory.append(e)
+		if len(self.trainErrorHistory) < 5:  
+			self.trainErrorHistory.append(e)
 		else:
-			for i in range(len(self.errorHistory)-1):
-				self.errorHistory[i] = self.errorHistory[i+1]
-			self.errorHistory[-1] = e
+			for i in range(len(self.trainErrorHistory)-1):
+				self.trainErrorHistory[i] = self.trainErrorHistory[i+1]
+			self.trainErrorHistory[-1] = e
 
 		#Sliding window error over appeox last 10 episodes characturistic time. 
-		self.slidingError = self.slidingError*0.9 + self.error
+		self.slidingError = self.slidingError*0.9 + self.trainError
 		#Instantaneous difference in last er ror between episodes. 
-		if len(self.errorHistory) > 1:
-			self.dError = self.errorHistory[-1] - self.errorHistory[-2] 
+		if len(self.trainErrorHistory) > 1:
+			self.dError = self.trainErrorHistory[-1] - self.trainErrorHistory[-2] 
 
 		return e
 
@@ -168,10 +170,10 @@ class Predictor():
 		#Fitness function 1 Chrisantha's attempt
 		if fitness_type == 0:#SIMPLE MINIMIZE PREDICTION ERROR FITNESS FUNCTION FOR PREDICTORS.
 #           fit = -self.dError/(1.0*self.error)
-			fit = -self.error*errMultiplier
+			fit = -self.trainError*errMultiplier
 		elif fitness_type == 1:
 			#Fitness function 2 Mai's attempt (probably need to use adaptive thresholds for this to be ok)
-			if self.error > ERROR_THRESHOLD and self.dError > DERROR_THRESHOLD:
+			if self.trainError > ERROR_THRESHOLD and self.dError > DERROR_THRESHOLD:
 				fit = 0
 			else:
 				fit = 1
@@ -239,7 +241,7 @@ class Agent():
 			r=[]
 
 			for problem, predictors in enumerate(distr):
-				error=np.mean([p.error for p in predictors])
+				error=np.mean([p.trainError for p in predictors])
 				r.append(error)	
 
 			return r
@@ -249,7 +251,7 @@ class Agent():
 
 			for problem, predictors in enumerate(distr):
 				if len(predictors)>0:
-					error=min([p.error for p in predictors])
+					error=min([p.trainError for p in predictors])
 				else:
 					error=5
 
@@ -264,7 +266,7 @@ class Agent():
 			best_predictor=-1
 			for problem, predictors in enumerate(distr):
 				if len(predictors)!=0:
-					errors=[p.error for p in predictors]
+					errors=[p.trainError for p in predictors]
 					best=np.argmin(errors)
 					err=errors[best]
 					if err<min_error:
@@ -293,7 +295,7 @@ class Agent():
 
 			for problem, predictors in enumerate(distr):
 				if len(predictors)!=0:
-					err=np.mean([p.error for p in predictors])
+					err=np.mean([p.trainError for p in predictors])
 				else:
 					err=-1
 
@@ -328,7 +330,7 @@ class Agent():
 						errMultipliers = [(FLAGS.punish_inputs_base**(sum(p.inputMask)-2.5)) for p in predictors]
 					else:
 						errMultipliers = [1 for p in predictors]
-					errors=[p.error for p in predictors]
+					errors=[p.trainError for p in predictors]
 					for e in xrange(len(errors)):
 						errors[e] *= errMultipliers[e]
 					best=np.argmin(errors)
@@ -644,7 +646,7 @@ class Cumule():
 
 					#draw()
 
-				if itime%FLAGS.evolution_period == 0:
+				if (not FLAGS.disable_evolution) and (itime%FLAGS.evolution_period == 0):
 					a = random.randint(0, FLAGS.num_predictors-1)
 					b = random.randint(0, FLAGS.num_predictors-1)
 					while(a == b):
