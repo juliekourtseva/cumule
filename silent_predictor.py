@@ -493,7 +493,7 @@ class Cumule():
 					plot(plots[j,:,:])
 				savefig("%sarchive_saved_%s.png" % (FLAGS.outputdir, fig_num))
 				shutil.move("%sarchive_saved_%s.png" % (FLAGS.outputdir, fig_num),
-							"%sarchive_saved_%s_part%s.png" % (FLAGS.outputdir, itime, fig_num))
+							"%sarchive_saved_%s_part%s_%s.png" % (FLAGS.outputdir, itime, fig_num, FLAGS.outputdir[:-1]))
 
 			if compare_input_bits:
 				figure()
@@ -508,7 +508,7 @@ class Cumule():
 					num_errors.append(diff)
 				bar(nonzero, num_errors)
 				savefig("%sarchive_wrong_input_fractions.png" % FLAGS.outputdir)
-				shutil.move("%sarchive_wrong_input_fractions.png" % FLAGS.outputdir, "%swrong_input_fractions_%s.png" % (FLAGS.outputdir, itime))
+				shutil.move("%sarchive_wrong_input_fractions.png" % FLAGS.outputdir, "%swrong_input_fractions_%s_%s.png" % (FLAGS.outputdir, itime, FLAGS.outputdir[:-1]))
 
 			return mse
 
@@ -518,7 +518,7 @@ class Cumule():
 			return mse
 
 		def run(self, run_number, try_number):
-			logfile=open(FLAGS.outputdir+FLAGS.logfile.replace(".log", "_%s_%s.log" % (run_number, try_number)),'w',1)
+			logfile=open(FLAGS.outputdir+FLAGS.logfile.replace(".log", "_%s_%s_%s.log" % (run_number, try_number, FLAGS.outputdir[:-1])),'w',1)
 			errHis = []
 
 			m = self.agent.getRandomMotor()
@@ -653,7 +653,7 @@ class Cumule():
 					ylabel("Predictors")
 
 					savefig("%sfigure1.png" % FLAGS.outputdir)
-					shutil.move("%sfigure1.png" % FLAGS.outputdir, "%sfigure1_%s_%s.png" % (FLAGS.outputdir, run_number, try_number))
+					shutil.move("%sfigure1.png" % FLAGS.outputdir, "%sfigure1_%s_%s_%s.png" % (FLAGS.outputdir, run_number, try_number, FLAGS.outputdir[:-1]))
 
 					#draw()
 
@@ -717,7 +717,7 @@ def test_distribution(distr, test_set_length, test_agent, test_world, dims, plot
 	plots=np.ndarray((test_world.state_size, test_set_length, 2))*0
 	sum_errors = defaultdict(list)
 
-	test_distrib_file = open(FLAGS.outputdir + "test_distrib.log", 'a')
+	test_distrib_file = open(FLAGS.outputdir + "test_distrib_%s.log" % FLAGS.outputdir[:-1], 'a')
 
 	for t in range(FLAGS.test_set_length):
 
@@ -781,6 +781,8 @@ if __name__ == '__main__':
 		World = NewWorld
 
 	parameters = open(FLAGS.outputdir + "parameters.log", 'w')
+	parameters.write(" ".join(sys.argv))
+	parameters.write("\n")
 
 	fl=vars(FLAGS)
 	for k in sorted(fl.iterkeys()):
