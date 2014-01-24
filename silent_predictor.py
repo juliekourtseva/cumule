@@ -731,7 +731,7 @@ def test_distribution(distr, test_set_length, test_agent, test_world, dims, plot
 				# this is used for the archive, where there is at most 1 predictor per output
 				predicted=predictors[0].predict_masked(inp)
 				# to get the mean squared error
-				err+=(predicted[problem]-stp1[problem])**2
+				err+=abs(predicted[problem]-stp1[problem])
 
 				# collect data for plotting purposes
 				if plot_data:
@@ -741,7 +741,7 @@ def test_distribution(distr, test_set_length, test_agent, test_world, dims, plot
 				if get_best:
 					predictions = [p.predict_masked(inp) for p in predictors]
 					test_distrib_file.write("problem %s, state %s\npredictions %s\n\n" % (problem, stp1, predictions))
-					errors = [(stp1[problem] - p.predict_masked(inp)[problem])**2 for p in predictors]
+					errors = [abs(stp1[problem] - p.predict_masked(inp)[problem]) for p in predictors]
 					errors = [e*1.0/test_set_length for e in errors]
 					if len(sum_errors[problem]) == 0:
 						sum_errors[problem] = errors
