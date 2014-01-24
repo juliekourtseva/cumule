@@ -69,6 +69,7 @@ parser.add_argument("--old_world", help="use old 8-dimensional world (default: f
 parser.add_argument("--check_input_mask", help="plot a graph of how many bits are wrong in the input masks of archived predictors", action="store_true", default=False)
 parser.add_argument("--disable_evolution", help="do not use evolution - just train (default: False)", action="store_true", default=False)
 parser.add_argument("--hidden_layer_size", help="size of the hidden layer (default: 10)", type=int, default=10)
+parser.add_argument("--hidden_layer_number", help="number of hidden layers (default: 1)", type=int, default=1)
 parser.add_argument("--relative_error", help="use error = (state-prediction)*abs(state) to take into account magnitude of state (default: False)",
 					action="store_true", default=False)
 
@@ -92,7 +93,12 @@ class Predictor():
 
 		self.learning_rate = LearningRate
 		self.ds = SupervisedDataSet(inSize, outSize)
-		self.net = buildNetwork(inSize, FLAGS.hidden_layer_size, outSize, hiddenclass=TanhLayer, bias=True)
+		args = [inSize]
+		for hl in xrange(FLAGS.hidden_layer_number):
+			args.append(FLAGS.hidden_layer_size)
+		args.append(outSize)
+		kwargs = {'hiddenclass': TanhLayer, 'bias': True}
+		self.net = buildNetwork(*(tuple(args)), **kwargs)
 		self.trainer = BackpropTrainer(self.net, self.ds, learningrate=self.learning_rate, verbose = False, weightdecay=WEIGHT_DECAY)
 		self.prediction = [0] * outSize
 		self.mse = 100
@@ -394,7 +400,7 @@ class Agent():
 				ep.append(e)
 			return ep
 
-		def createPredictor(self, hiddenLayerSize, problem, test_world):
+		def createPredictor(self, problem, test_world):
 			p=Predictor(World.state_size + World.action_size,World.state_size, FLAGS.learning_rate)
 			p.problem=problem
 			p.outputMask = [0]*World.state_size
@@ -413,7 +419,12 @@ class Agent():
 
 			self.predictors[loser].learning_rate =  FLAGS.learning_rate
 			self.predictors[loser].ds = SupervisedDataSet(World.state_size+World.action_size, World.state_size)
-			self.predictors[loser].net = buildNetwork(World.state_size+World.action_size,World.state_size+World.action_size,World.state_size, bias=True)
+			args = [World.state_size+World.action_size]
+			for hl in xrange(FLAGS.hidden_layer_number):
+				args.append(FLAGS.hidden_layer_size)
+			args.append(World.state_size)
+			kwargs = {'hiddenclass': TanhLayer, 'bias': True}
+			self.predictors[loser].net = buildNetwork(*(tuple(args)), **kwargs)
 			self.predictors[loser].trainer = BackpropTrainer(self.predictors[loser].net, self.predictors[loser].ds, learningrate=self.predictors[loser].learning_rate, verbose = False, weightdecay=WEIGHT_DECAY)
 			self.predictors[loser].outputMask = self.predictors[winner].outputMask
 
@@ -574,7 +585,7 @@ class Cumule():
 								logfile.write("Problem %s was successfully solved. Error: %s, inputMask %s\n" % (
 										problem, round(error, 4), stringify_mask(predictor.inputMask)))
 								self.agent.archive[problem]=predictor
-								self.agent.predictors[self.agent.predictors.index(predictor)]=self.agent.createPredictor(FLAGS.hidden_layer_size, problem, self.world)
+								self.agent.predictors[self.agent.predictors.index(predictor)]=self.agent.createPredictor(problem, self.world)
 								archive_changed=True
 
 							else: 
@@ -587,7 +598,7 @@ class Cumule():
 									#logfile.write("Problem "+str(problem)+" has a better solution. Archived test error: "+str(round(old_err,4))+". Better solution: "+str(round(new_err,4))+"\n")
 									logfile.write("Problem %s has a better solution. Archived test error: %s, input %s. Better solution: %s, input %s\n" % (
 											problem, round(old_err,4), stringify_mask(old_predictor.inputMask), round(new_err,4), stringify_mask(predictor.inputMask)))
-									self.agent.predictors[self.agent.predictors.index(predictor)]=self.agent.createPredictor(FLAGS.hidden_layer_size, problem, self.world)
+									self.agent.predictors[self.agent.predictors.index(predictor)]=self.agent.createPredictor(problem, self.world)
 									archive_changed=True
 								else:
 									logfile.write("Solution for %s remains the same. Archived test error: %s, inputMask %s. Candidate error %s, inputMask %s\n" % (
