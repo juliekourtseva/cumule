@@ -35,6 +35,8 @@ INITIAL_INPUT_ALL_ONES = "ones"
 INITIAL_INPUT_RANDOM = "random"
 INITIAL_INPUT_CORRECT = "correct"
 
+MAX_TEST_ERROR = 10
+
 parser = argparse.ArgumentParser()
 parser.add_argument("timelimit",default=50,type=int)
 parser.add_argument("-n","--num_predictors",help="population size(default:50)",default=50,type=int)
@@ -66,6 +68,7 @@ parser.add_argument("--train_error", help="use training error instead of test er
 parser.add_argument("--old_world", help="use old 8-dimensional world (default: false)", action="store_true", default=False)
 parser.add_argument("--check_input_mask", help="plot a graph of how many bits are wrong in the input masks of archived predictors", action="store_true", default=False)
 parser.add_argument("--disable_evolution", help="do not use evolution - just train (default: False)", action="store_true", default=False)
+parser.add_argument("--hidden_layer_size", help="size of the hidden layer (default: 10)", type=int, default=10)
 
 from world import World as OldWorld
 from new_world import World as NewWorld
@@ -87,7 +90,7 @@ class Predictor():
 
 		self.learning_rate = LearningRate
 		self.ds = SupervisedDataSet(inSize, outSize)
-		self.net = buildNetwork(inSize, 10, outSize, hiddenclass=TanhLayer, bias=True)
+		self.net = buildNetwork(inSize, FLAGS.hidden_layer_size, outSize, hiddenclass=TanhLayer, bias=True)
 		self.trainer = BackpropTrainer(self.net, self.ds, learningrate=self.learning_rate, verbose = False, weightdecay=WEIGHT_DECAY)
 		self.prediction = [0] * outSize
 		self.mse = 100
@@ -105,7 +108,7 @@ class Predictor():
 		elif FLAGS.initial_input == INITIAL_INPUT_ALL_ONES:
 			self.inputMask = [1]*inSize
 		self.trainError = 0
-		self.testError = 0
+		self.testError = MAX_TEST_ERROR
 		self.trainErrorHistory = []
 		self.dErrorHistory = []
 		self.slidingError = 0
@@ -246,12 +249,15 @@ class Agent():
 
 			return r
 
-		def minimumErrors(self,distr):
+		def minimumErrors(self, distr, use_train):
 			r=[]
 
 			for problem, predictors in enumerate(distr):
 				if len(predictors)>0:
-					error=min([p.trainError for p in predictors])
+					if use_train:
+						error=min([p.trainError for p in predictors])
+					else:
+						error=min([p.testError for p in predictors])
 				else:
 					error=5
 
@@ -260,13 +266,16 @@ class Agent():
 
 			return r
 
-		def bestSolved(self,distr):
+		def bestSolved(self, distr, use_train):
 			min_error=10000000000
 			best_solved=-1
 			best_predictor=-1
 			for problem, predictors in enumerate(distr):
 				if len(predictors)!=0:
-					errors=[p.trainError for p in predictors]
+					if use_train:
+						errors=[p.trainError for p in predictors]
+					else:
+						errors=[p.testError for p in predictors]
 					best=np.argmin(errors)
 					err=errors[best]
 					if err<min_error:
@@ -288,14 +297,17 @@ class Agent():
 			return (fastest,min_speed)
 
 		# execute this AFTER storing into archive and BEFORE new training
-		def problemsMutationProbabilities(self,distr):
+		def problemsMutationProbabilities(self, distr, use_train):
 			r=[]
 			min_err=1000000
 			max_err=-1000000
 
 			for problem, predictors in enumerate(distr):
 				if len(predictors)!=0:
-					err=np.mean([p.trainError for p in predictors])
+					if use_train:
+						err=np.mean([p.trainError for p in predictors])
+					else:
+						err=np.mean([p.testError for p in predictors])
 				else:
 					err=-1
 
@@ -380,15 +392,14 @@ class Agent():
 				ep.append(e)
 			return ep
 
-		def createPredictor(self,hiddenLayerSize,problem):
+		def createPredictor(self, hiddenLayerSize, problem, test_world):
 			p=Predictor(World.state_size + World.action_size,World.state_size, FLAGS.learning_rate)
 			p.problem=problem
 			p.outputMask = [0]*World.state_size
 			p.outputMask[problem]=1
-
+			if (FLAGS.disable_evolution or FLAGS.disable_input_mutation) and (FLAGS.initial_input == INITIAL_INPUT_CORRECT):
+				p.inputMask = test_world.correct_masks[problem]
 			return p
-
-
 
 		def clearPredictorsData(self):
 			for i in range(FLAGS.num_predictors):
@@ -561,7 +572,7 @@ class Cumule():
 								logfile.write("Problem %s was successfully solved. Error: %s, inputMask %s\n" % (
 										problem, round(error, 4), stringify_mask(predictor.inputMask)))
 								self.agent.archive[problem]=predictor
-								self.agent.predictors[self.agent.predictors.index(predictor)]=self.agent.createPredictor(10,problem)
+								self.agent.predictors[self.agent.predictors.index(predictor)]=self.agent.createPredictor(FLAGS.hidden_layer_size, problem, self.world)
 								archive_changed=True
 
 							else: 
@@ -574,7 +585,7 @@ class Cumule():
 									#logfile.write("Problem "+str(problem)+" has a better solution. Archived test error: "+str(round(old_err,4))+". Better solution: "+str(round(new_err,4))+"\n")
 									logfile.write("Problem %s has a better solution. Archived test error: %s, input %s. Better solution: %s, input %s\n" % (
 											problem, round(old_err,4), stringify_mask(old_predictor.inputMask), round(new_err,4), stringify_mask(predictor.inputMask)))
-									self.agent.predictors[self.agent.predictors.index(predictor)]=self.agent.createPredictor(10,problem)
+									self.agent.predictors[self.agent.predictors.index(predictor)]=self.agent.createPredictor(FLAGS.hidden_layer_size, problem, self.world)
 									archive_changed=True
 								else:
 									logfile.write("Solution for %s remains the same. Archived test error: %s, inputMask %s. Candidate error %s, inputMask %s\n" % (
@@ -596,7 +607,7 @@ class Cumule():
 				self.agent.clearPredictorsData()
 
 				distr=self.agent.problemsDistribution()
-				errHis.append(self.agent.minimumErrors(distr))
+				errHis.append(self.agent.minimumErrors(distr, FLAGS.train_error))
 
 				# don't store too much error history, for performance reasons
 				if len(errHis) > BACKTIME:
@@ -612,7 +623,7 @@ class Cumule():
 					
 					fig=subplot(2,3,1)
 					fig.clear()
-					title('Minimum errors on outputs')
+					title('Minimum %s errors on outputs' % ('train' if FLAGS.train_error else 'test'))
 					plot(errHis[-BACKTIME:])
 					xlabel('episodes(last '+str(BACKTIME)+')')
 					ylabel('errors')
@@ -675,7 +686,8 @@ class Cumule():
 						loser = a 
 
 					if random.uniform(0,1) < FLAGS.predictor_mutation_prob:
-						self.agent.copyAndMutatePredictor(winner, loser, self.agent.problemsMutationProbabilities(self.agent.problemsDistribution()))
+						self.agent.copyAndMutatePredictor(winner, loser, self.agent.problemsMutationProbabilities(
+								self.agent.problemsDistribution(), FLAGS.train_error))
 
 					# fig=subplot(5,2,1)
 					# self.plot_fitness(fig)
@@ -704,6 +716,9 @@ def test_distribution(distr, test_set_length, test_agent, test_world, dims, plot
 
 	plots=np.ndarray((test_world.state_size, test_set_length, 2))*0
 	sum_errors = defaultdict(list)
+
+	test_distrib_file = open(FLAGS.outputdir + "test_distrib.log", 'a')
+
 	for t in range(FLAGS.test_set_length):
 
 		m = test_agent.getRandomMotor()
@@ -724,6 +739,8 @@ def test_distribution(distr, test_set_length, test_agent, test_world, dims, plot
 
 				# collect data to get the best predictor for an output
 				if get_best:
+					predictions = [p.predict_masked(inp) for p in predictors]
+					test_distrib_file.write("problem %s, state %s\npredictions %s\n\n" % (problem, stp1, predictions))
 					errors = [(stp1[problem] - p.predict_masked(inp)[problem])**2 for p in predictors]
 					errors = [e*1.0/test_set_length for e in errors]
 					if len(sum_errors[problem]) == 0:
@@ -731,6 +748,13 @@ def test_distribution(distr, test_set_length, test_agent, test_world, dims, plot
 					else:
 						for k in xrange(len(predictors)):
 							sum_errors[problem][k] += errors[k]
+	# set test errors on predictors
+	for problem in sum_errors:
+		for k in xrange(len(sum_errors[problem])):
+			distr[problem][k].testError = sum_errors[problem][k]
+
+
+	test_distrib_file.close()
 	return plots, sum_errors, 0.5*err/test_set_length
 
 global_errs=[]
@@ -756,9 +780,14 @@ if __name__ == '__main__':
 	else:
 		World = NewWorld
 
+	parameters = open(FLAGS.outputdir + "parameters.log", 'w')
+
 	fl=vars(FLAGS)
 	for k in sorted(fl.iterkeys()):
 		print k+": "+str(fl[k])
+		parameters.write("%s: %s\n" % (k, fl[k]))
+
+	parameters.close()
 
 	avg=0.0
 
