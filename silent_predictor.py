@@ -69,6 +69,8 @@ parser.add_argument("--old_world", help="use old 8-dimensional world (default: f
 parser.add_argument("--check_input_mask", help="plot a graph of how many bits are wrong in the input masks of archived predictors", action="store_true", default=False)
 parser.add_argument("--disable_evolution", help="do not use evolution - just train (default: False)", action="store_true", default=False)
 parser.add_argument("--hidden_layer_size", help="size of the hidden layer (default: 10)", type=int, default=10)
+parser.add_argument("--relative_error", help="use error = (state-prediction)*abs(state) to take into account magnitude of state (default: False)",
+					action="store_true", default=False)
 
 from world import World as OldWorld
 from new_world import World as NewWorld
@@ -731,7 +733,7 @@ def test_distribution(distr, test_set_length, test_agent, test_world, dims, plot
 				# this is used for the archive, where there is at most 1 predictor per output
 				predicted=predictors[0].predict_masked(inp)
 				# to get the mean squared error
-				err+=abs(predicted[problem]-stp1[problem])
+				err+=(abs(predicted[problem]-stp1[problem])/(abs(stp1[problem]) if FLAGS.relative_error else 1))
 
 				# collect data for plotting purposes
 				if plot_data:
@@ -741,7 +743,7 @@ def test_distribution(distr, test_set_length, test_agent, test_world, dims, plot
 				if get_best:
 					predictions = [p.predict_masked(inp) for p in predictors]
 					test_distrib_file.write("problem %s, state %s\npredictions %s\n\n" % (problem, stp1, predictions))
-					errors = [abs(stp1[problem] - p.predict_masked(inp)[problem]) for p in predictors]
+					errors = [abs(stp1[problem] - p.predict_masked(inp)[problem])/(abs(stp1[problem]) if FLAGS.relative_error else 1) for p in predictors]
 					errors = [e*1.0/test_set_length for e in errors]
 					if len(sum_errors[problem]) == 0:
 						sum_errors[problem] = errors
