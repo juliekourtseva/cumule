@@ -34,7 +34,7 @@ PREDICTOR_MUTATION_PROBABILITY=0.8
 INITIAL_INPUT_ALL_ONES = "ones"
 INITIAL_INPUT_RANDOM = "random"
 INITIAL_INPUT_CORRECT = "correct"
-
+AVERAGE_INPUT_BITS = 2.5
 MAX_TEST_ERROR = 10
 
 parser = argparse.ArgumentParser()
@@ -72,6 +72,7 @@ parser.add_argument("--hidden_layer_size", help="size of the hidden layer (defau
 parser.add_argument("--hidden_layer_number", help="number of hidden layers (default: 1)", type=int, default=1)
 parser.add_argument("--relative_error", help="use error = (state-prediction)*abs(state) to take into account magnitude of state (default: False)",
 					action="store_true", default=False)
+parser.add_argument("--reward_minimal", help="fewer input bits = higher fitness (default: False)", action="store_true", default=False)
 
 from world import World as OldWorld
 from new_world import World as NewWorld
@@ -83,6 +84,13 @@ def list_diff(list1, list2):
 	for i in xrange(len(list_out)):
 		list_out[i] = abs(list_out[i] - list2[i])
 	return list_out
+
+def mutate_mask(mask, probability):
+	mutated = mask[:]
+	for i in range(len(mutated)):
+		if random.uniform(0,1) < probability:
+			mutated[i] ^= 1
+	return mutated
 
 def stringify_mask(mask):
 	return "".join([str(b) for b in mask])
@@ -102,7 +110,6 @@ class Predictor():
 		self.trainer = BackpropTrainer(self.net, self.ds, learningrate=self.learning_rate, verbose = False, weightdecay=WEIGHT_DECAY)
 		self.prediction = [0] * outSize
 		self.mse = 100
-		self.age=0
 		
 #		self.outputMask = [random.randint(0, 1) for i in range(outSize)]
 		self.outputMask = [0]*outSize
@@ -131,10 +138,6 @@ class Predictor():
 		return out
 
 	def trainPredictor(self):
-
-		self.age+=1
-
-		
 		new_ds=deepcopy(self.ds)
 
 		if FLAGS.sliding_training:
@@ -169,11 +172,11 @@ class Predictor():
 
 		return e
 
-	def getTrainFitness(self, fitness_type, rewardMinimal=True):
-		if rewardMinimal:
+	def getTrainFitness(self, fitness_type):
+		if FLAGS.reward_minimal:
 			# Trying to get a difference of between 10 and 20 for 8 bits set vs 2.5 bits set
 			# 2.5 is roughly the average number of bits that the "correct" input mask would use in this case
-			errMultiplier = FLAGS.punish_inputs_base**(sum(self.inputMask)-2.5)
+			errMultiplier = FLAGS.punish_inputs_base**(sum(self.inputMask)-AVERAGE_INPUT_BITS)
 		else:
 			errMultiplier = 1
 
@@ -192,13 +195,13 @@ class Predictor():
 		self.fitness = fit
 		return fit 
 
-	def getTestFitness(self, fitness_type, test_length, test_agent, test_world, rewardMinimal=True):
+	def getTestFitness(self, fitness_type, test_length, test_agent, test_world):
 		distr = [[] for i in xrange(test_world.state_size)]
 		distr[self.problem] = [self]
 
 		_, _, mse = test_distribution(distr, test_length, test_agent, test_world, [self.problem], plot_data=False, get_best=False)
 
-		if rewardMinimal:
+		if FLAGS.reward_minimal:
 			# Trying to get a difference of between 10 and 20 for 8 bits set vs 2.5 bits set
 			# 2.5 is roughly the average number of bits that the "correct" input mask would use in this case
 			errMultiplier = FLAGS.punish_inputs_base**(sum(self.inputMask)-2.5)
@@ -340,11 +343,11 @@ class Agent():
 			r=np.divide(r,sum(r))
 			return r
 		
-		def minTrainErrors(self,distr,rewardMinimal=True):
+		def minTrainErrors(self, distr):
 			r=[]
 			for problem, predictors in enumerate(distr):
 				if len(predictors)!=0:
-					if rewardMinimal:
+					if FLAGS.reward_minimal:
 						# Trying to get a difference of between 10 and 20 for 8 bits set vs 2.5 bits set
 						# 2.5 is roughly the average number of bits that the "correct" input mask would use in this case
 						errMultipliers = [(FLAGS.punish_inputs_base**(sum(p.inputMask)-2.5)) for p in predictors]
@@ -413,6 +416,13 @@ class Agent():
 			for i in range(FLAGS.num_predictors):
 				self.predictors[i].ds.clear()
 
+		def outputMutationMultiplier(self, problem):
+			num_pred_for_problem = self.problemsAllocation(self.problemsDistribution())[problem]
+			if num_pred_for_problem == 1:
+				return 0
+			else:
+				return (num_pred_for_problem*1.0/FLAGS.num_predictors)**FLAGS.punish_population_factor
+
 		def copyAndMutatePredictor(self, winner, loser,distribution):
 			newLoser = deepcopy(self.predictors[winner])
 			self.predictors[loser] = newLoser
@@ -442,19 +452,10 @@ class Agent():
 				self.predictors[loser].inputMask = self.predictors[winner].inputMask
 
 			if not FLAGS.disable_input_mutation:
-				for i in range(len(self.predictors[loser].inputMask)):
-					if random.uniform(0,1) < FLAGS.input_mutation_prob:
-						if self.predictors[loser].inputMask[i] == 0:
-							self.predictors[loser].inputMask[i] = 1
-						else:
-							self.predictors[loser].inputMask[i] = 0
-
-			allocation = [a*1.0/FLAGS.num_predictors for a in self.problemsAllocation(self.problemsDistribution())]
-			current_problem = self.predictors[loser].outputMask.index(1)
-			problem_fraction = allocation[current_problem]
+				self.predictors[loser].inputMask = mutate_mask(predictors[loser].inputMask, FLAGS.input_mutation_prob)
 
 			# if there are more predictors for this output, increase the probability of output mask mutation
-			if random.uniform(0,1) < (FLAGS.output_mutation_prob * (1 + problem_fraction)**FLAGS.punish_population_factor):
+			if random.uniform(0,1) < (FLAGS.output_mutation_prob * self.outputMutationMultiplier(self.predictors[loser].problem)):
 				self.predictors[loser].outputMask = [0]*World.state_size
 				r = np.random.choice(range(World.state_size),p=distribution)
 				self.predictors[loser].outputMask[r] = 1
@@ -680,8 +681,8 @@ class Cumule():
 						fit1 = self.agent.predictors[a].getTrainFitness(0) #0 = Fitness type Chrisantha, 1 = Fitness type Mai
 						fit2 = self.agent.predictors[b].getTrainFitness(0)
 					else:
-						fit1 = self.agent.predictors[a].getTestFitness(0, 5, self.agent, self.world, rewardMinimal=True)
-						fit2 = self.agent.predictors[b].getTestFitness(0, 5, self.agent, self.world, rewardMinimal=True)
+						fit1 = self.agent.predictors[a].getTestFitness(0, 5, self.agent, self.world)
+						fit2 = self.agent.predictors[b].getTestFitness(0, 5, self.agent, self.world)
 
 					winner = None
 					loser = None
