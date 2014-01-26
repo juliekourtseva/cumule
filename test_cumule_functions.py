@@ -10,7 +10,7 @@ LEARNING_RATE = 0.01
 class TestAgentFunctions(unittest.TestCase):
 	def test_output_mutation_multiplier(self):
 		predictors = [Predictor(INSIZE, OUTSIZE, LEARNING_RATE, 2, 10,
-								"ones") for p in xrange(48)]
+								"ones", World.correct_masks) for p in xrange(48)]
 		agent = Agent(predictors)
 		# all the predictors have the same output
 		for p in agent.predictors:

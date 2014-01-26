@@ -97,7 +97,7 @@ def stringify_mask(mask):
 
 class Predictor(): 
 
-	def __init__(self, inSize, outSize, LearningRate, hidden_layer_number, hidden_layer_size, initial_input):
+	def __init__(self, inSize, outSize, LearningRate, hidden_layer_number, hidden_layer_size, initial_input, correct_masks):
 
 		self.learning_rate = LearningRate
 		self.ds = SupervisedDataSet(inSize, outSize)
@@ -117,7 +117,7 @@ class Predictor():
 		self.outputMask[r] = 1
 		#Specific to Mai's code. Make input and output masks.
 		if initial_input == INITIAL_INPUT_CORRECT:
-			self.inputMask = World.correct_masks[r]
+			self.inputMask = correct_masks[r]
 		elif initial_input == INITIAL_INPUT_RANDOM:
 			self.inputMask = [random.randint(0, 1) for i in range(inSize)]
 		elif initial_input == INITIAL_INPUT_ALL_ONES:
@@ -400,9 +400,9 @@ class Agent():
 			return ep
 
 		def createPredictor(self, problem, test_world):
-			p=Predictor(World.state_size + World.action_size,World.state_size, FLAGS.learning_rate)
+			p=Predictor(test_world.state_size + test_world.action_size,test_world.state_size, FLAGS.learning_rate)
 			p.problem=problem
-			p.outputMask = [0]*World.state_size
+			p.outputMask = [0]*test_world.state_size
 			p.outputMask[problem]=1
 			if (FLAGS.disable_evolution or FLAGS.disable_input_mutation) and (FLAGS.initial_input == INITIAL_INPUT_CORRECT):
 				p.inputMask = test_world.correct_masks[problem]
@@ -419,16 +419,16 @@ class Agent():
 			else:
 				return (1 + (num_pred_for_problem*1.0/num_predictors))**punish_population_factor
 
-		def copyAndMutatePredictor(self, winner, loser,distribution):
+		def copyAndMutatePredictor(self, winner, loser, test_world, distribution):
 			newLoser = deepcopy(self.predictors[winner])
 			self.predictors[loser] = newLoser
 
 			self.predictors[loser].learning_rate =  FLAGS.learning_rate
-			self.predictors[loser].ds = SupervisedDataSet(World.state_size+World.action_size, World.state_size)
-			args = [World.state_size+World.action_size]
+			self.predictors[loser].ds = SupervisedDataSet(test_world.state_size+test_world.action_size, test_world.state_size)
+			args = [test_world.state_size+test_world.action_size]
 			for hl in xrange(FLAGS.hidden_layer_number):
 				args.append(FLAGS.hidden_layer_size)
-			args.append(World.state_size)
+			args.append(test_world.state_size)
 			kwargs = {'hiddenclass': TanhLayer, 'bias': True}
 			self.predictors[loser].net = buildNetwork(*(tuple(args)), **kwargs)
 			self.predictors[loser].trainer = BackpropTrainer(self.predictors[loser].net, self.predictors[loser].ds, learningrate=self.predictors[loser].learning_rate, verbose = False, weightdecay=WEIGHT_DECAY)
@@ -452,13 +452,13 @@ class Agent():
 
 			# if there are more predictors for this output, increase the probability of output mask mutation
 			if random.uniform(0,1) < (FLAGS.output_mutation_prob * self.outputMutationMultiplier(
-					self.predictors[loser].problem, FLAGS.num_predictors, FLAGS.punish_population_factor)):
-				self.predictors[loser].outputMask = [0]*World.state_size
-				r = np.random.choice(range(World.state_size),p=distribution)
+					test_world.state_size, self.predictors[loser].problem, FLAGS.num_predictors, FLAGS.punish_population_factor)):
+				self.predictors[loser].outputMask = [0]*test_world.state_size
+				r = np.random.choice(range(test_world.state_size),p=distribution)
 				self.predictors[loser].outputMask[r] = 1
 				self.predictors[loser].problem=r
 				if (FLAGS.initial_input == INITIAL_INPUT_CORRECT):
-					self.predictors[loser].inputMask = World.correct_masks[r]
+					self.predictors[loser].inputMask = test_world.correct_masks[r]
 
 class Cumule():
 		def __init__(self):
@@ -467,7 +467,8 @@ class Cumule():
 			predictors = [Predictor(self.world.state_size + self.world.action_size,
 									self.world.state_size, FLAGS.learning_rate,
 									FLAGS.hidden_layer_number, FLAGS.hidden_layer_size,
-									FLAGS.initial_input) for p in xrange(FLAGS.num_predictors)]
+									FLAGS.initial_input, self.world.correct_masks
+									) for p in xrange(FLAGS.num_predictors)]
 			self.agent = Agent(predictors)
 			self.popFitHistory=np.ndarray((FLAGS.num_predictors,BACKTIME))*0
 			self.timestep=0
@@ -526,7 +527,7 @@ class Cumule():
 				#print nonzero
 				for non_0 in nonzero:
 					# fraction of incorrect bits in input mask over the total number of bits
-					diff = sum(list_diff(World.correct_masks[non_0], distr[non_0][0].inputMask))*1.0/len(distr[non_0][0].inputMask)
+					diff = sum(list_diff(self.world.correct_masks[non_0], distr[non_0][0].inputMask))*1.0/len(distr[non_0][0].inputMask)
 					num_errors.append(diff)
 				bar(nonzero, num_errors)
 				savefig("%swrong_input_fractions.png" % FLAGS.outputdir)
@@ -618,7 +619,7 @@ class Cumule():
 
 					fig=subplot(2, 2, 3)
 					fig.clear()
-					bar(np.arange(0,World.state_size),self.agent.problemsAllocation(self.agent.problemsDistribution(self.world_state_size)))
+					bar(np.arange(0,self.world.state_size),self.agent.problemsAllocation(self.agent.problemsDistribution(self.world.state_size)))
 					xlabel("Problem number")
 					ylabel("Predictors")
 
@@ -656,7 +657,7 @@ class Cumule():
 						loser = a 
 
 					if random.uniform(0,1) < FLAGS.predictor_mutation_prob:
-						self.agent.copyAndMutatePredictor(winner, loser, self.agent.problemsMutationProbabilities(
+						self.agent.copyAndMutatePredictor(winner, loser, self.world, self.agent.problemsMutationProbabilities(
 								self.agent.problemsDistribution(self.world.state_size), FLAGS.train_error))
 
 					# fig=subplot(5,2,1)
