@@ -38,13 +38,12 @@ AVERAGE_INPUT_BITS = 2.5
 MAX_TEST_ERROR = 10
 
 parser = argparse.ArgumentParser()
-parser.add_argument("timelimit",default=50,type=int)
+parser.add_argument("--timelimit", help="timelimit (default:100)", default=100,type=int)
 parser.add_argument("-n","--num_predictors",help="population size(default:50)",default=50,type=int)
 parser.add_argument("--runs",help="number of runs(default:1)",default=1,type=int)
 parser.add_argument("--epochs",help="number of epochs for each training(default:5)",default=5,type=int)
 parser.add_argument("-ts","--test_set_length",help="test set length(default:50)",default=50,type=int)
 parser.add_argument("-e","--evolution_period", help="evolution period(default:10)", type=int, default=10)
-parser.add_argument("-a","--archive_threshold", help="threshold for getting into the archive(default: 0.02)", type=float, default=0.02)
 parser.add_argument("-lr","--learning_rate", help="learning rate for predictors(default: 0.01)", type=float, default=0.01)
 parser.add_argument("-r","--replication", help="enable weights replication(default: no)",action="store_true", default=False)
 parser.add_argument("-lg","--logfile", help="log file name(default: prediction.log)",type=str, default="prediction.log")
@@ -73,6 +72,7 @@ parser.add_argument("--hidden_layer_number", help="number of hidden layers (defa
 parser.add_argument("--relative_error", help="use error = (state-prediction)*abs(state) to take into account magnitude of state (default: False)",
 					action="store_true", default=False)
 parser.add_argument("--reward_minimal", help="fewer input bits = higher fitness (default: False)", action="store_true", default=False)
+parser.add_argument("--plot_interval", help="number of episodes for after which predictors are plotted (default: 10)", type=int, default=10)
 
 from world import World as OldWorld
 from new_world import World as NewWorld
@@ -419,7 +419,7 @@ class Agent():
 		def outputMutationMultiplier(self, problem):
 			num_pred_for_problem = self.problemsAllocation(self.problemsDistribution())[problem]
 			if num_pred_for_problem == 1:
-				return 0
+				return 1.0/FLAGS.output_mutation_prob if (FLAGS.output_mutation_prob > 0) else 1
 			else:
 				return (num_pred_for_problem*1.0/FLAGS.num_predictors)**FLAGS.punish_population_factor
 
@@ -452,7 +452,7 @@ class Agent():
 				self.predictors[loser].inputMask = self.predictors[winner].inputMask
 
 			if not FLAGS.disable_input_mutation:
-				self.predictors[loser].inputMask = mutate_mask(predictors[loser].inputMask, FLAGS.input_mutation_prob)
+				self.predictors[loser].inputMask = mutate_mask(self.predictors[loser].inputMask, FLAGS.input_mutation_prob)
 
 			# if there are more predictors for this output, increase the probability of output mask mutation
 			if random.uniform(0,1) < (FLAGS.output_mutation_prob * self.outputMutationMultiplier(self.predictors[loser].problem)):
@@ -489,47 +489,46 @@ class Cumule():
 			xlabel('generations')
 			ylabel('fitness')
 
-		def test_archive(self, itime, compare_input_bits=False):
-			plots, _, mse = test_distribution([[p] for p in self.agent.archive], FLAGS.test_set_length, self.agent, self.world,
-											  range(self.world.state_size), plot_data=True, get_best=False)
+		def archive_error(self, test_length, dims):
+			_, _, mse = test_distribution([[p] for p in self.agent.archive], FLAGS.test_set_length, self.agent, self.world,
+										  dims, plot_data=False, get_best=False)
+			return mse
 
+		def plot_best_efforts(self, best_efforts, itime):
+			distr = [[0] for x in xrange(self.world.state_size)]
+			for problem, _, best_predictor in best_efforts:
+				distr[problem] = [best_predictor]
+			plots, _, _ = test_distribution(distr, FLAGS.test_set_length, self.agent, self.world,
+											range(self.world.state_size), plot_data=True, get_best=False)
 			# use as many figures as necessary containing 8 plots each
-			num_figures = (World.state_size+7)/8
+			num_figures = (self.world.state_size+7)/8
 
 			for fig_num in xrange(num_figures):
 				figure()
 				for i in xrange(0, 8):
 					j = (fig_num*8)+i
-					if j >= World.state_size:
+					if j >= self.world.state_size:
 						break
 					subplot(4, 2, i)
 					title("Problem #"+str(j))
 					plot(plots[j,:,:])
-				savefig("%sarchive_saved_%s.png" % (FLAGS.outputdir, fig_num))
-				shutil.move("%sarchive_saved_%s.png" % (FLAGS.outputdir, fig_num),
-							"%sarchive_saved_%s_part%s_%s.png" % (FLAGS.outputdir, itime, fig_num, FLAGS.outputdir[:-1]))
+				savefig("%sbest_%s.png" % (FLAGS.outputdir, fig_num))
+				shutil.move("%sbest_%s.png" % (FLAGS.outputdir, fig_num),
+							"%sbest_%s_part%s_%s.png" % (FLAGS.outputdir, itime, fig_num, FLAGS.outputdir[:-1]))
 
-			if compare_input_bits:
+			if FLAGS.check_input_mask:
 				figure()
 				num_errors = []
-				nonzero = [a for a in xrange(World.state_size) if self.agent.archive[a] != 0]
+				nonzero = [p for p in xrange(self.world.state_size) if distr[p] != [0]]
 
 				#print nonzero
 				for non_0 in nonzero:
 					# fraction of incorrect bits in input mask over the total number of bits
-					diff = sum(list_diff(World.correct_masks[non_0], self.agent.archive[non_0].inputMask))*1.0/len(self.agent.archive[non_0].inputMask)
-					#print i, World.correct_masks[i], self.agent.archive[i].inputMask, diff
+					diff = sum(list_diff(World.correct_masks[non_0], distr[non_0][0].inputMask))*1.0/len(distr[non_0][0].inputMask)
 					num_errors.append(diff)
 				bar(nonzero, num_errors)
-				savefig("%sarchive_wrong_input_fractions.png" % FLAGS.outputdir)
-				shutil.move("%sarchive_wrong_input_fractions.png" % FLAGS.outputdir, "%swrong_input_fractions_%s_%s.png" % (FLAGS.outputdir, itime, FLAGS.outputdir[:-1]))
-
-			return mse
-
-		def archive_error(self, test_length, dims):
-			_, _, mse = test_distribution([[p] for p in self.agent.archive], FLAGS.test_set_length, self.agent, self.world,
-										  dims, plot_data=False, get_best=False)
-			return mse
+				savefig("%swrong_input_fractions.png" % FLAGS.outputdir)
+				shutil.move("%swrong_input_fractions.png" % FLAGS.outputdir, "%sinput_fractions_%s_%s.png" % (FLAGS.outputdir, itime, FLAGS.outputdir[:-1]))
 
 		def run(self, run_number, try_number):
 			logfile=open(FLAGS.outputdir+FLAGS.logfile.replace(".log", "_%s_%s_%s.log" % (run_number, try_number, FLAGS.outputdir[:-1])),'w',1)
@@ -561,51 +560,17 @@ class Cumule():
 				m = self.agent.getRandomMotor() 
 				s = self.world.resetState(m)
 
-				# Archive evaluating
-				if self.agent.archive.count(0) < World.state_size:
-					if archive_changed==True:
-						new_error=self.test_archive(itime, FLAGS.check_input_mask)
-						if self.agent.archive.count(0) == 0:
-							if min_archive_error>new_error:
-								logfile.write("New achieved archive error: "+str(new_error)+"\n")
-								min_archive_error=new_error
-						archive_changed=False
-
 				distr=self.agent.problemsDistribution()
 
 				# Check if there's a candidate solution in population
-				if itime!=0:
+				if itime!=0 and (itime%FLAGS.plot_interval == 0):
 					if FLAGS.train_error:
 						bestEfforts=self.agent.minTrainErrors(distr)
 					else:
 						bestEfforts=self.agent.minTestErrors(distr, FLAGS.population_test_length, self.world, itime, logfile)
-					for problem, error, predictor in bestEfforts:
-						if error<FLAGS.archive_threshold:
-							if self.agent.archive[problem]==0:
-								#logfile.write("Problem "+str(problem)+" was successfully solved. Error: "+str(round(error,4))+"\n")
-								logfile.write("Problem %s was successfully solved. Error: %s, inputMask %s\n" % (
-										problem, round(error, 4), stringify_mask(predictor.inputMask)))
-								self.agent.archive[problem]=predictor
-								self.agent.predictors[self.agent.predictors.index(predictor)]=self.agent.createPredictor(problem, self.world)
-								archive_changed=True
-
-							else: 
-								old_err=self.archive_error(FLAGS.test_set_length,[problem])
-								old_predictor=self.agent.archive[problem]
-
-								self.agent.archive[problem]=predictor
-								new_err=self.archive_error(FLAGS.test_set_length,[problem])
-								if new_err<old_err:
-									#logfile.write("Problem "+str(problem)+" has a better solution. Archived test error: "+str(round(old_err,4))+". Better solution: "+str(round(new_err,4))+"\n")
-									logfile.write("Problem %s has a better solution. Archived test error: %s, input %s. Better solution: %s, input %s\n" % (
-											problem, round(old_err,4), stringify_mask(old_predictor.inputMask), round(new_err,4), stringify_mask(predictor.inputMask)))
-									self.agent.predictors[self.agent.predictors.index(predictor)]=self.agent.createPredictor(problem, self.world)
-									archive_changed=True
-								else:
-									logfile.write("Solution for %s remains the same. Archived test error: %s, inputMask %s. Candidate error %s, inputMask %s\n" % (
-											problem, round(error, 4), stringify_mask(old_predictor.inputMask), round(new_err,4), stringify_mask(predictor.inputMask)))
-									self.agent.archive[problem]=old_predictor
-
+					#for problem, error, predictor in bestEfforts:
+						# use as many figures as necessary containing 8 plots each
+					self.plot_best_efforts(bestEfforts, itime)
 
 				# training of predictors
 				for t in range(FLAGS.episode_length):#*********************************************
@@ -635,32 +600,21 @@ class Cumule():
 					# xlabel("problem number")
 					# ylabel("mutation probabilty")
 					
-					fig=subplot(2,3,1)
+					fig=subplot(2, 2, 1)
 					fig.clear()
 					title('Minimum %s errors on outputs' % ('train' if FLAGS.train_error else 'test'))
 					plot(errHis[-BACKTIME:])
 					xlabel('episodes(last '+str(BACKTIME)+')')
 					ylabel('errors')
 
-					# fig=subplot(2,3,2)
+					# fig=subplot(2,2,2)
 					# fig.clear()
 					# title('Minimum errors on outputs')
 					# plot(errHis)
 					# xlabel('episodes(all time)')
 					# ylabel('errors')
 
-					fig=subplot(2,3,4)
-					fig.clear()
-					title('Solved problems(blue means solved)')
-					barlist=bar(np.arange(0,World.state_size),[1 for k in self.agent.archive])
-					for k,v in enumerate(self.agent.archive):
-						if v==0:
-							color='r'
-							barlist[k].set_color(color)
-					xlabel('problem')
-					ylabel('archive')
-
-					fig=subplot(2,3,5)
+					fig=subplot(2, 2, 3)
 					fig.clear()
 					bar(np.arange(0,World.state_size),self.agent.problemsAllocation(self.agent.problemsDistribution()))
 					xlabel("Problem number")
@@ -687,10 +641,10 @@ class Cumule():
 					winner = None
 					loser = None
 
-					if self.agent.archive[self.agent.predictors[a].problem] != 0:
-						fit1 *= FLAGS.punish_archive_factor
-					if self.agent.archive[self.agent.predictors[b].problem] != 0:
-						fit2 *= FLAGS.punish_archive_factor
+					# if self.agent.archive[self.agent.predictors[a].problem] != 0:
+					# 	fit1 *= FLAGS.punish_archive_factor
+					# if self.agent.archive[self.agent.predictors[b].problem] != 0:
+					# 	fit2 *= FLAGS.punish_archive_factor
 
 					if fit1 > fit2:
 						winner = a
@@ -823,8 +777,5 @@ if __name__ == '__main__':
 			print result
 
 	print_global_errs()
-	# if FLAGS.show_test_error:
-	# 	c.test_archive()
-	# 	raw_input("Press Enter to exit")
 
 atexit.register(print_global_errs)
