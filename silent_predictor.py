@@ -521,13 +521,13 @@ class Cumule():
 
 				for p in xrange(self.world.state_size):
 					if distr[p] != [0]:
-						num_errors.append(None)
-					else:
 						diff = sum(list_diff(self.world.correct_masks[p], distr[p][0].inputMask))*1.0/len(distr[p][0].inputMask)
+						num_errors.append(diff)
+					else:
 						num_errors.append(None)
-						bar(nonzero, [num_errors[n] for n in xrange(len(num_errors)) if num_errors[n] is not None])
+				bar(nonzero, [num_errors[n] for n in xrange(len(num_errors)) if num_errors[n] is not None])
 				savefig("%swrong_input_fractions.png" % FLAGS.outputdir)
-				shutil.move("%swrong_input_fractions.png" % FLAGS.outputdir, "%sinput_fractions_%s_%s.png" % (FLAGS.outputdir, itime, FLAGS.outputdir[:-1]))
+				shutil.move("%swrong_input_fractions.png" % FLAGS.outputdir, "%swrong_input_fractions_%s_%s.png" % (FLAGS.outputdir, itime, FLAGS.outputdir[:-1]))
 				return num_errors
 			return []
 
@@ -535,7 +535,7 @@ class Cumule():
 			logfile=open(FLAGS.outputdir+FLAGS.logfile.replace(".log", "_%s_%s_%s.log" % (run_number, try_number, FLAGS.outputdir[:-1])),'w',1)
 			errHis = []
 			errHisAllTime = []
-			inputMaskErrors = []
+			inputMaskErrors = [[] for x in xrange(self.world.state_size)]
 
 			m = self.agent.getRandomMotor()
 			s = self.world.updateState(m)
@@ -577,9 +577,9 @@ class Cumule():
 						logfile.write("Best efforts: Problem %s, error %s, input mask %s\n" % (problem, err, stringify_mask(pred.inputMask)))
 
 					input_mask_error_fractions = self.plot_best_efforts(bestEfforts, itime)
-					distr=self.agent.problemsDistribution(self.world.state_size)
 					if FLAGS.check_input_mask:
-						inputMaskErrors.append(input_mask_error_fractions)
+						for i in xrange(self.world.state_size):
+							inputMaskErrors[i].append(input_mask_error_fractions[i])
 					errHisAllTime.append(self.agent.minimumErrors(distr, FLAGS.train_error))
 
 				# training of predictors
@@ -630,11 +630,17 @@ class Cumule():
 					xlabel("Problem number")
 					ylabel("Predictors")
 
-					if FLAGS.check_input_mask:
-						fig=subplot(2, 2, 2)
+					if (FLAGS.check_input_mask) and itime > 0:
+						fig=subplot(2, 2, 4)
 						fig.clear()
 						title('Fraction of incorrect bits in input mask')
-						plot(inputMaskErrors)
+						arrays = [np.array(a).astype(np.double) for a in inputMaskErrors]
+						masks = [np.isfinite(arrays[a]) for a in xrange(len(arrays))]
+						times = np.array([t for t in xrange(itime/FLAGS.plot_interval)])
+						#plot(inputMaskErrors)
+						for a in xrange(len(arrays)):
+							msk = masks[a]
+							plot(times[masks[a]], arrays[a][msk])
 						xlabel('%s*episodes (all time)' % FLAGS.plot_interval)
 						ylabel('incorrect input bits fraction')
 
