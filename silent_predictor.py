@@ -126,6 +126,7 @@ class Predictor():
 		self.fitness = 0
 		self.problem=r
 		self.previousData=[]
+		self.plots = []
 
 	def getPrediction(self, input):
 
@@ -194,7 +195,7 @@ class Predictor():
 		distr = [[] for i in xrange(test_world.state_size)]
 		distr[self.problem] = [self]
 
-		_, _, mse = test_distribution(distr, test_length, test_agent, test_world, [self.problem], plot_data=False, get_best=False)
+		test_distribution(distr, test_length, test_agent, test_world, [self.problem])
 
 		if FLAGS.reward_minimal:
 			# Trying to get a difference of between 10 and 20 for 8 bits set vs 2.5 bits set
@@ -206,8 +207,7 @@ class Predictor():
 		fit = 0
 		#Fitness function 1 Chrisantha's attempt 
 		if fitness_type == 0:#SIMPLE MINIMIZE PREDICTION ERROR FITNESS FUNCTION FOR PREDICTORS. 
-#           fit = -self.dError/(1.0*self.error)
-			fit = -mse*errMultiplier
+			fit = -self.testError*errMultiplier
 		elif fitness_type == 1:
 			#Fitness function 2 Mai's attempt (probably need to use adaptive thresholds for this to be ok)
 			if mse > ERROR_THRESHOLD and self.dError > DERROR_THRESHOLD:
@@ -353,17 +353,14 @@ class Agent():
 					r.append((problem,err,predictors[best]))	
 			return r
 
-		def minTestErrors(self, distr, test_length, test_world, itime, logfile):
+		def minTestErrors(self, distr, itime, logfile):
 			r=[]
-
-			_, sum_errors, _ = test_distribution(distr, FLAGS.test_set_length, self, test_world,
-												 range(test_world.state_size), plot_data=False, get_best=True)
-
 			for problem, predictors in enumerate(distr):
 				if len(predictors) != 0:
-					logfile.write("time %s, predictor %s, errors %s\n" % (itime, problem, sum_errors[problem]))
-					best = np.argmin(sum_errors[problem])
-					err = sum_errors[problem][best]
+					problem_errors = [p.testError for p in predictors]
+					logfile.write("time %s, predictor %s, errors %s\n" % (itime, problem, problem_errors))
+					best = np.argmin(problem_errors)
+					err = problem_errors[best]
 					r.append((problem, err, predictors[best]))
 			return r
 
@@ -487,29 +484,22 @@ class Cumule():
 			xlabel('generations')
 			ylabel('fitness')
 
-		def archive_error(self, test_length, dims):
-			_, _, mse = test_distribution([[p] for p in self.agent.archive], FLAGS.test_set_length, self.agent, self.world,
-										  dims, plot_data=False, get_best=False)
-			return mse
-
-		def plot_best_efforts(self, best_efforts, itime):
-			distr = [[0] for x in xrange(self.world.state_size)]
+		def plot_best_efforts(self, best_efforts, test_set_length, itime):
+			distr = [0 for x in xrange(self.world.state_size)]
 			for problem, _, best_predictor in best_efforts:
-				distr[problem] = [best_predictor]
-			plots, _, _ = test_distribution(distr, FLAGS.test_set_length, self.agent, self.world,
-											range(self.world.state_size), plot_data=True, get_best=False)
+				distr[problem] = best_predictor
 			# use as many figures as necessary containing 8 plots each
 			num_figures = (self.world.state_size+7)/8
 
 			for fig_num in xrange(num_figures):
 				figure()
 				for i in xrange(0, 8):
-					j = (fig_num*8)+i
-					if j >= self.world.state_size:
+					problem = (fig_num*8)+i
+					if problem >= self.world.state_size:
 						break
 					subplot(4, 2, i)
-					title("Problem #"+str(j))
-					plot(plots[j,:,:])
+					title("Problem #"+str(problem))
+					plot(range(test_set_length), distr[problem].plots)
 				savefig("%sbest_%s.png" % (FLAGS.outputdir, fig_num))
 				shutil.move("%sbest_%s.png" % (FLAGS.outputdir, fig_num),
 							"%sbest_%s_part%s_%s.png" % (FLAGS.outputdir, itime, fig_num, FLAGS.outputdir[:-1]))
@@ -517,11 +507,11 @@ class Cumule():
 			if FLAGS.check_input_mask:
 				figure()
 				num_errors = []
-				nonzero = [p for p in xrange(self.world.state_size) if distr[p] != [0]]
+				nonzero = [p for p in xrange(self.world.state_size) if distr[p] != 0]
 
 				for p in xrange(self.world.state_size):
 					if distr[p] != [0]:
-						diff = sum(list_diff(self.world.correct_masks[p], distr[p][0].inputMask))*1.0/len(distr[p][0].inputMask)
+						diff = sum(list_diff(self.world.correct_masks[p], distr[p].inputMask))*1.0/len(distr[p].inputMask)
 						num_errors.append(diff)
 					else:
 						num_errors.append(None)
@@ -570,13 +560,13 @@ class Cumule():
 					if FLAGS.train_error:
 						bestEfforts=self.agent.minTrainErrors(distr)
 					else:
-						bestEfforts=self.agent.minTestErrors(distr, FLAGS.population_test_length, self.world, itime, logfile)
-					#for problem, error, predictor in bestEfforts:
-						# use as many figures as necessary containing 8 plots each
+						# evaluate test errors for all the predictors
+						test_distribution(distr, FLAGS.test_set_length, self.agent, self.world, range(self.world.state_size))
+						bestEfforts=self.agent.minTestErrors(distr, itime, logfile)
 					for problem, err, pred in bestEfforts:
 						logfile.write("Best efforts: Problem %s, error %s, input mask %s\n" % (problem, err, stringify_mask(pred.inputMask)))
 
-					input_mask_error_fractions = self.plot_best_efforts(bestEfforts, itime)
+					input_mask_error_fractions = self.plot_best_efforts(bestEfforts, FLAGS.test_set_length, itime)
 					if FLAGS.check_input_mask:
 						for i in xrange(self.world.state_size):
 							inputMaskErrors[i].append(input_mask_error_fractions[i])
@@ -699,55 +689,38 @@ class Cumule():
 			
 			logfile.close()
 
-def test_distribution(distr, test_set_length, test_agent, test_world, dims, plot_data=False, get_best=False):
+def test_distribution(distr, test_set_length, test_agent, test_world, dims):
 	#Generate random initial motor command between -1 and 1.
 	m = test_agent.getRandomMotor()
 	#Generate initial state for this motor command, and all else zero.
 	s = test_world.updateState(m)
 	err=0
 
-	plots=np.ndarray((test_world.state_size, test_set_length, 2))*0
-	sum_errors = defaultdict(list)
+	# clear data from previous test in predictors
+	for problem, predictors in enumerate(distr):
+		for p in predictors:
+			p.testError = 0
+			p.plots = []
 
 	test_distrib_file = open(FLAGS.outputdir + "test_distrib_%s.log" % FLAGS.outputdir[:-1], 'a')
-
 	for t in range(FLAGS.test_set_length):
-
 		m = test_agent.getRandomMotor()
 		stp1 = test_world.updateState(m)
 		inp = np.concatenate((s,m), axis = 0)
 		s = stp1
-
 		for problem, predictors in enumerate(distr):
 			if (problem in dims) and (len(predictors) != 0) and (predictors[0] != 0):
-				# this is used for the archive, where there is at most 1 predictor per output
-				predicted=predictors[0].predict_masked(inp)
-				# to get the mean squared error
-				err+=(abs(predicted[problem]-stp1[problem])/(abs(stp1[problem]) if FLAGS.relative_error else 1))
-
-				# collect data for plotting purposes
-				if plot_data:
-					plots[problem, t]=[predicted[problem], stp1[problem]]
-
-				# collect data to get the best predictor for an output
-				if get_best:
-					predictions = [p.predict_masked(inp) for p in predictors]
-					test_distrib_file.write("problem %s, state %s\npredictions %s\n\n" % (problem, stp1, predictions))
-					errors = [abs(stp1[problem] - p.predict_masked(inp)[problem])/(abs(stp1[problem]) if FLAGS.relative_error else 1) for p in predictors]
-					errors = [e*1.0/test_set_length for e in errors]
-					if len(sum_errors[problem]) == 0:
-						sum_errors[problem] = errors
-					else:
-						for k in xrange(len(predictors)):
-							sum_errors[problem][k] += errors[k]
-	# set test errors on predictors
-	for problem in sum_errors:
-		for k in xrange(len(sum_errors[problem])):
-			distr[problem][k].testError = sum_errors[problem][k]
-
-
+				predict_and_test(problem, predictors, test_set_length, inp, stp1, test_distrib_file)
 	test_distrib_file.close()
-	return plots, sum_errors, 0.5*err/test_set_length
+
+def predict_and_test(problem, predictors, test_set_length, inp, stp1, test_distrib_file):
+	for p in predictors:
+		prediction = p.predict_masked(inp)[problem]
+		actual = stp1[problem]
+		p.plots.append([prediction, actual])
+		p.testError += (abs(prediction-actual)*1.0/test_set_length)
+		test_distrib_file.write("problem %s, state %s\npredictions %s\n" % (problem, stp1[problem], prediction))
+	test_distrib_file.write("\n")
 
 global_errs=[]
 def print_global_errs():
