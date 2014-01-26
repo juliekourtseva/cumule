@@ -568,6 +568,8 @@ class Cumule():
 						bestEfforts=self.agent.minTestErrors(distr, FLAGS.population_test_length, self.world, itime, logfile)
 					#for problem, error, predictor in bestEfforts:
 						# use as many figures as necessary containing 8 plots each
+					for problem, err, pred in bestEfforts:
+						logfile.write("Best efforts: Problem %s, error %s, input mask %s" % (problem, err, stringify_mask(pred.inputMask)))
 					self.plot_best_efforts(bestEfforts, itime)
 
 				# training of predictors

@@ -22,9 +22,9 @@ class World():
 		return s
 
 	def updateState(self, m):
-		self.stp1[0] = 2*self.s[1] + 4*self.s[2]
-		self.stp1[1] = 3*m[0] + 5*self.s[2] + 10*m[1]
-		self.stp1[2] = 4*self.s[0] + 6*self.s[1] + 8*m[1]
+		self.stp1[0] = (self.s[1] + self.s[2])/2.0
+		self.stp1[1] = (m[0] + self.s[2] + m[1])/3.0
+		self.stp1[2] = (self.s[0] + self.s[1] + m[1])/3.0
 
 		#Set s to s(t+1)
 		for i in range(NUM_DIMENSIONS):
