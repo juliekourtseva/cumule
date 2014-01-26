@@ -140,7 +140,6 @@ class Predictor():
 			if len(self.previousData)!=0:
 				for sample,target in self.previousData:
 					new_ds.addSample(sample,target)
-		
 
 		self.trainer.setData(new_ds)
 		for i in range(FLAGS.epochs):
@@ -165,7 +164,6 @@ class Predictor():
 		#Instantaneous difference in last er ror between episodes. 
 		if len(self.trainErrorHistory) > 1:
 			self.dError = self.trainErrorHistory[-1] - self.trainErrorHistory[-2] 
-
 		return e
 
 	def getTrainFitness(self, fitness_type):
@@ -572,25 +570,25 @@ class Cumule():
 							inputMaskErrors[i].append(input_mask_error_fractions[i])
 					errHisAllTime.append(self.agent.minimumErrors(distr, FLAGS.train_error))
 
+				m = self.agent.getRandomMotor() 
+				s = self.world.resetState(m)
+
 				# training of predictors
 				for t in range(FLAGS.episode_length):#*********************************************
-
 					m = self.agent.getRandomMotor()
 					stp1 = self.world.updateState(m)
 					inp = np.concatenate((s,m), axis = 0)
 					self.agent.storeDataPoint(inp, stp1) 
 
-					s = stp1
-
 				self.agent.trainPredictors()
 				self.agent.clearPredictorsData()
 
 				distr=self.agent.problemsDistribution(self.world.state_size)
-				errHis.append(self.agent.minimumErrors(distr, FLAGS.train_error))
+				#errHis.append(self.agent.minimumErrors(distr, FLAGS.train_error))
 
 				# don't store too much error history, for performance reasons
-				if len(errHis) > BACKTIME:
-					errHis = errHis[-BACKTIME:]
+				# if len(errHis) > BACKTIME:
+				# 	errHis = errHis[-BACKTIME:]
 
 				if FLAGS.show_plots:
 					#Plot the raw errors of the predictors in the population 
@@ -600,28 +598,28 @@ class Cumule():
 					# xlabel("problem number")
 					# ylabel("mutation probabilty")
 					
-					fig=subplot(2, 2, 1)
-					fig.clear()
-					title('Minimum %s errors on outputs' % ('train' if FLAGS.train_error else 'test'))
-					plot(errHis[-BACKTIME:])
-					xlabel('episodes (last %s)' % BACKTIME)
-					ylabel('errors')
+					# fig=subplot(2, 2, 1)
+					# fig.clear()
+					# title('Minimum %s errors on outputs' % ('train' if FLAGS.train_error else 'test'))
+					# plot(errHis[-BACKTIME:])
+					# xlabel('episodes (last %s)' % BACKTIME)
+					# ylabel('errors')
 
-					fig=subplot(2, 2, 2)
+					fig=subplot(2, 2, 1)
 					fig.clear()
 					title('Minimum errors on outputs')
 					plot(errHisAllTime)
 					xlabel('%s*episodes (all time)' % FLAGS.plot_interval)
 					ylabel('errors')
 
-					fig=subplot(2, 2, 3)
+					fig=subplot(2, 2, 2)
 					fig.clear()
 					bar(np.arange(0,self.world.state_size),self.agent.problemsAllocation(self.agent.problemsDistribution(self.world.state_size)))
 					xlabel("Problem number")
 					ylabel("Predictors")
 
 					if (FLAGS.check_input_mask) and itime > 0:
-						fig=subplot(2, 2, 4)
+						fig=subplot(2, 2, 3)
 						fig.clear()
 						title('Fraction of incorrect bits in input mask')
 						arrays = [np.array(a).astype(np.double) for a in inputMaskErrors]
@@ -707,18 +705,21 @@ def test_distribution(distr, test_set_length, test_agent, test_world, dims):
 		m = test_agent.getRandomMotor()
 		stp1 = test_world.updateState(m)
 		inp = np.concatenate((s,m), axis = 0)
-		s = stp1
 		for problem, predictors in enumerate(distr):
 			if (problem in dims) and (len(predictors) != 0) and (predictors[0] != 0):
+				test_distrib_file.write("Problem %s, num_predictors %s\n" % (problem, len(predictors)))
+				test_distrib_file.write("Predictors before: %s\n" % [p.testError for p in predictors])
 				predict_and_test(problem, predictors, test_set_length, inp, stp1, test_distrib_file)
+				test_distrib_file.write("Predictors after: %s\n\n" % [p.testError for p in predictors])
+		s = stp1
 	test_distrib_file.close()
 
 def predict_and_test(problem, predictors, test_set_length, inp, stp1, test_distrib_file):
-	for p in predictors:
-		prediction = p.predict_masked(inp)[problem]
+	for p in xrange(len(predictors)):
+		prediction = predictors[p].predict_masked(inp)[problem]
 		actual = stp1[problem]
-		p.plots.append([prediction, actual])
-		p.testError += (abs(prediction-actual)*1.0/test_set_length)
+		predictors[p].plots.append([prediction, actual])
+		predictors[p].testError += (abs(prediction-actual)*1.0/test_set_length)
 		test_distrib_file.write("problem %s, state %s\npredictions %s\n" % (problem, stp1[problem], prediction))
 	test_distrib_file.write("\n")
 
