@@ -519,19 +519,23 @@ class Cumule():
 				num_errors = []
 				nonzero = [p for p in xrange(self.world.state_size) if distr[p] != [0]]
 
-				#print nonzero
-				for non_0 in nonzero:
-					# fraction of incorrect bits in input mask over the total number of bits
-					diff = sum(list_diff(self.world.correct_masks[non_0], distr[non_0][0].inputMask))*1.0/len(distr[non_0][0].inputMask)
-					num_errors.append(diff)
-				bar(nonzero, num_errors)
+				for p in xrange(self.world.state_size):
+					if distr[p] != [0]:
+						num_errors.append(None)
+					else:
+						diff = sum(list_diff(self.world.correct_masks[p], distr[p][0].inputMask))*1.0/len(distr[p][0].inputMask)
+						num_errors.append(None)
+						bar(nonzero, [num_errors[n] for n in xrange(len(num_errors)) if num_errors[n] is not None])
 				savefig("%swrong_input_fractions.png" % FLAGS.outputdir)
 				shutil.move("%swrong_input_fractions.png" % FLAGS.outputdir, "%sinput_fractions_%s_%s.png" % (FLAGS.outputdir, itime, FLAGS.outputdir[:-1]))
+				return num_errors
+			return []
 
 		def run(self, run_number, try_number):
 			logfile=open(FLAGS.outputdir+FLAGS.logfile.replace(".log", "_%s_%s_%s.log" % (run_number, try_number, FLAGS.outputdir[:-1])),'w',1)
 			errHis = []
 			errHisAllTime = []
+			inputMaskErrors = []
 
 			m = self.agent.getRandomMotor()
 			s = self.world.updateState(m)
@@ -572,8 +576,10 @@ class Cumule():
 					for problem, err, pred in bestEfforts:
 						logfile.write("Best efforts: Problem %s, error %s, input mask %s\n" % (problem, err, stringify_mask(pred.inputMask)))
 
-					self.plot_best_efforts(bestEfforts, itime)
+					input_mask_error_fractions = self.plot_best_efforts(bestEfforts, itime)
 					distr=self.agent.problemsDistribution(self.world.state_size)
+					if FLAGS.check_input_mask:
+						inputMaskErrors.append(input_mask_error_fractions)
 					errHisAllTime.append(self.agent.minimumErrors(distr, FLAGS.train_error))
 
 				# training of predictors
@@ -623,6 +629,14 @@ class Cumule():
 					bar(np.arange(0,self.world.state_size),self.agent.problemsAllocation(self.agent.problemsDistribution(self.world.state_size)))
 					xlabel("Problem number")
 					ylabel("Predictors")
+
+					if FLAGS.check_input_mask:
+						fig=subplot(2, 2, 2)
+						fig.clear()
+						title('Fraction of incorrect bits in input mask')
+						plot(inputMaskErrors)
+						xlabel('%s*episodes (all time)' % FLAGS.plot_interval)
+						ylabel('incorrect input bits fraction')
 
 					savefig("%sfigure1.png" % FLAGS.outputdir)
 					shutil.move("%sfigure1.png" % FLAGS.outputdir, "%sfigure1_%s_%s_%s.png" % (FLAGS.outputdir, run_number, try_number, FLAGS.outputdir[:-1]))
