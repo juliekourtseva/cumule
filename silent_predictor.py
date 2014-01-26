@@ -531,6 +531,7 @@ class Cumule():
 		def run(self, run_number, try_number):
 			logfile=open(FLAGS.outputdir+FLAGS.logfile.replace(".log", "_%s_%s_%s.log" % (run_number, try_number, FLAGS.outputdir[:-1])),'w',1)
 			errHis = []
+			errHisAllTime = []
 
 			m = self.agent.getRandomMotor()
 			s = self.world.updateState(m)
@@ -569,8 +570,11 @@ class Cumule():
 					#for problem, error, predictor in bestEfforts:
 						# use as many figures as necessary containing 8 plots each
 					for problem, err, pred in bestEfforts:
-						logfile.write("Best efforts: Problem %s, error %s, input mask %s" % (problem, err, stringify_mask(pred.inputMask)))
+						logfile.write("Best efforts: Problem %s, error %s, input mask %s\n" % (problem, err, stringify_mask(pred.inputMask)))
+
 					self.plot_best_efforts(bestEfforts, itime)
+					distr=self.agent.problemsDistribution(self.world.state_size)
+					errHisAllTime.append(self.agent.minimumErrors(distr, FLAGS.train_error))
 
 				# training of predictors
 				for t in range(FLAGS.episode_length):#*********************************************
@@ -604,15 +608,15 @@ class Cumule():
 					fig.clear()
 					title('Minimum %s errors on outputs' % ('train' if FLAGS.train_error else 'test'))
 					plot(errHis[-BACKTIME:])
-					xlabel('episodes(last '+str(BACKTIME)+')')
+					xlabel('episodes (last %s)' % BACKTIME)
 					ylabel('errors')
 
-					# fig=subplot(2,2,2)
-					# fig.clear()
-					# title('Minimum errors on outputs')
-					# plot(errHis)
-					# xlabel('episodes(all time)')
-					# ylabel('errors')
+					fig=subplot(2, 2, 2)
+					fig.clear()
+					title('Minimum errors on outputs')
+					plot(errHisAllTime)
+					xlabel('%s*episodes (all time)' % FLAGS.plot_interval)
+					ylabel('errors')
 
 					fig=subplot(2, 2, 3)
 					fig.clear()
