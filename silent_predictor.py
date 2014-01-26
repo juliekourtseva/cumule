@@ -97,13 +97,13 @@ def stringify_mask(mask):
 
 class Predictor(): 
 
-	def __init__(self, inSize, outSize, LearningRate):
+	def __init__(self, inSize, outSize, LearningRate, hidden_layer_number, hidden_layer_size, initial_input):
 
 		self.learning_rate = LearningRate
 		self.ds = SupervisedDataSet(inSize, outSize)
 		args = [inSize]
-		for hl in xrange(FLAGS.hidden_layer_number):
-			args.append(FLAGS.hidden_layer_size)
+		for hl in xrange(hidden_layer_number):
+			args.append(hidden_layer_size)
 		args.append(outSize)
 		kwargs = {'hiddenclass': TanhLayer, 'bias': True}
 		self.net = buildNetwork(*(tuple(args)), **kwargs)
@@ -116,11 +116,11 @@ class Predictor():
 		r = random.randint(0,outSize-1)
 		self.outputMask[r] = 1
 		#Specific to Mai's code. Make input and output masks.
-		if FLAGS.initial_input == INITIAL_INPUT_CORRECT:
+		if initial_input == INITIAL_INPUT_CORRECT:
 			self.inputMask = World.correct_masks[r]
-		elif FLAGS.initial_input == INITIAL_INPUT_RANDOM:
+		elif initial_input == INITIAL_INPUT_RANDOM:
 			self.inputMask = [random.randint(0, 1) for i in range(inSize)]
-		elif FLAGS.initial_input == INITIAL_INPUT_ALL_ONES:
+		elif initial_input == INITIAL_INPUT_ALL_ONES:
 			self.inputMask = [1]*inSize
 		self.trainError = 0
 		self.testError = MAX_TEST_ERROR
@@ -236,22 +236,18 @@ class Predictor():
 		return self.predict(input_masked)
 
 class Agent(): 
-		def __init__(self):
-
+		def __init__(self, predictors):
 			#The agent has a population of M predictors. 
-			self.predictors = []
-			self.archive=[0 for i in range(World.state_size)]
-			for i in range(FLAGS.num_predictors):
-				p=Predictor(World.state_size + World.action_size,World.state_size, FLAGS.learning_rate)
-				self.predictors.append(p)
+			self.predictors = predictors
+			#self.archive=[0 for i in range(state_size)]
 
-		def problemsDistribution(self):
-			r=[[] for i in range(World.state_size)]
+		def problemsDistribution(self, state_size):
+			r=[[] for i in range(state_size)]
 			for predictor in self.predictors:
 				r[predictor.problem].append(predictor)
 			return r
 
-		def averageErrors(self,distr):
+		def averageErrors(self, distr):
 			r=[]
 
 			for problem, predictors in enumerate(distr):
@@ -322,8 +318,8 @@ class Agent():
 				else:
 					err=-1
 
-				if self.archive[problem]!=0:
-					err=err*FLAGS.punish_archive_factor # we discourage agent from generating predictors that solve already solved problems
+				# if self.archive[problem]!=0:
+				# 	err=err*FLAGS.punish_archive_factor # we discourage agent from generating predictors that solve already solved problems
 				
 				if err>0 and err<min_err:
 					min_err=err
@@ -334,8 +330,8 @@ class Agent():
 				r.append(err)
 
 			for k,v in enumerate(r):
-				if self.archive[k]==0:
-					r[k]=max_err*5
+				# if self.archive[k]==0:
+				# 	r[k]=max_err*5
 				if v<0:
 					r[k]=max_err*3
 
@@ -416,12 +412,12 @@ class Agent():
 			for i in range(FLAGS.num_predictors):
 				self.predictors[i].ds.clear()
 
-		def outputMutationMultiplier(self, problem):
-			num_pred_for_problem = self.problemsAllocation(self.problemsDistribution())[problem]
+		def outputMutationMultiplier(self, state_size, problem, num_predictors, punish_population_factor):
+			num_pred_for_problem = self.problemsAllocation(self.problemsDistribution(state_size))[problem]
 			if num_pred_for_problem == 1:
-				return 1.0/FLAGS.output_mutation_prob if (FLAGS.output_mutation_prob > 0) else 1
+				return 0
 			else:
-				return (num_pred_for_problem*1.0/FLAGS.num_predictors)**FLAGS.punish_population_factor
+				return (1 + (num_pred_for_problem*1.0/num_predictors))**punish_population_factor
 
 		def copyAndMutatePredictor(self, winner, loser,distribution):
 			newLoser = deepcopy(self.predictors[winner])
@@ -455,7 +451,8 @@ class Agent():
 				self.predictors[loser].inputMask = mutate_mask(self.predictors[loser].inputMask, FLAGS.input_mutation_prob)
 
 			# if there are more predictors for this output, increase the probability of output mask mutation
-			if random.uniform(0,1) < (FLAGS.output_mutation_prob * self.outputMutationMultiplier(self.predictors[loser].problem)):
+			if random.uniform(0,1) < (FLAGS.output_mutation_prob * self.outputMutationMultiplier(
+					self.predictors[loser].problem, FLAGS.num_predictors, FLAGS.punish_population_factor)):
 				self.predictors[loser].outputMask = [0]*World.state_size
 				r = np.random.choice(range(World.state_size),p=distribution)
 				self.predictors[loser].outputMask[r] = 1
@@ -466,7 +463,12 @@ class Agent():
 class Cumule():
 		def __init__(self):
 			self.world = World()
-			self.agent = Agent()
+
+			predictors = [Predictor(self.world.state_size + self.world.action_size,
+									self.world.state_size, FLAGS.learning_rate,
+									FLAGS.hidden_layer_number, FLAGS.hidden_layer_size,
+									FLAGS.initial_input) for p in xrange(FLAGS.num_predictors)]
+			self.agent = Agent(predictors)
 			self.popFitHistory=np.ndarray((FLAGS.num_predictors,BACKTIME))*0
 			self.timestep=0
 
@@ -560,7 +562,7 @@ class Cumule():
 				m = self.agent.getRandomMotor() 
 				s = self.world.resetState(m)
 
-				distr=self.agent.problemsDistribution()
+				distr=self.agent.problemsDistribution(self.world.state_size)
 
 				# Check if there's a candidate solution in population
 				if itime!=0 and (itime%FLAGS.plot_interval == 0):
@@ -585,7 +587,7 @@ class Cumule():
 				self.agent.trainPredictors()
 				self.agent.clearPredictorsData()
 
-				distr=self.agent.problemsDistribution()
+				distr=self.agent.problemsDistribution(self.world.state_size)
 				errHis.append(self.agent.minimumErrors(distr, FLAGS.train_error))
 
 				# don't store too much error history, for performance reasons
@@ -616,7 +618,7 @@ class Cumule():
 
 					fig=subplot(2, 2, 3)
 					fig.clear()
-					bar(np.arange(0,World.state_size),self.agent.problemsAllocation(self.agent.problemsDistribution()))
+					bar(np.arange(0,World.state_size),self.agent.problemsAllocation(self.agent.problemsDistribution(self.world_state_size)))
 					xlabel("Problem number")
 					ylabel("Predictors")
 
@@ -655,7 +657,7 @@ class Cumule():
 
 					if random.uniform(0,1) < FLAGS.predictor_mutation_prob:
 						self.agent.copyAndMutatePredictor(winner, loser, self.agent.problemsMutationProbabilities(
-								self.agent.problemsDistribution(), FLAGS.train_error))
+								self.agent.problemsDistribution(self.world.state_size), FLAGS.train_error))
 
 					# fig=subplot(5,2,1)
 					# self.plot_fitness(fig)
@@ -734,6 +736,7 @@ def print_global_errs():
 
 if __name__ == '__main__':
 	#ion()
+	atexit.register(print_global_errs)
 
 	FLAGS=parser.parse_args()
 	if FLAGS.outputdir != "":
@@ -778,4 +781,3 @@ if __name__ == '__main__':
 
 	print_global_errs()
 
-atexit.register(print_global_errs)
