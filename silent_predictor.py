@@ -64,7 +64,6 @@ parser.add_argument("--punish_inputs_base", help="error = error*(base^(number of
 parser.add_argument("--recombination_prob", help="input masks recombination probability (default: 0.0)", type=float, default=0.0)
 parser.add_argument("--population_test_length", help="number of time steps for which to test predictors in population (default: 10)", type=int, default=10)
 parser.add_argument("--train_error", help="use training error instead of test error for archiving predictors (default: false)", action="store_true", default=False)
-parser.add_argument("--old_world", help="use old 8-dimensional world (default: false)", action="store_true", default=False)
 parser.add_argument("--check_input_mask", help="plot a graph of how many bits are wrong in the input masks of archived predictors", action="store_true", default=False)
 parser.add_argument("--disable_evolution", help="do not use evolution - just train (default: False)", action="store_true", default=False)
 parser.add_argument("--hidden_layer_size", help="size of the hidden layer (default: 10)", type=int, default=10)
@@ -73,11 +72,7 @@ parser.add_argument("--relative_error", help="use error = (state-prediction)*abs
 					action="store_true", default=False)
 parser.add_argument("--reward_minimal", help="fewer input bits = higher fitness (default: False)", action="store_true", default=False)
 parser.add_argument("--plot_interval", help="number of episodes for after which predictors are plotted (default: 10)", type=int, default=10)
-
-from world import World as OldWorld
-from new_world import World as NewWorld
-
-World = None
+parser.add_argument("--world_module", help="module from which to import world (default: world)", type=str, default="world")
 
 def list_diff(list1, list2):
 	list_out = list1[:]
@@ -462,7 +457,7 @@ class Agent():
 
 class Cumule():
 		def __init__(self):
-			self.world = World()
+			self.world = FLAGS.world.World()
 
 			predictors = [Predictor(self.world.state_size + self.world.action_size,
 									self.world.state_size, FLAGS.learning_rate,
@@ -747,10 +742,7 @@ if __name__ == '__main__':
 			pass
 		FLAGS.outputdir += "/"
 
-	if FLAGS.old_world:
-		World = OldWorld
-	else:
-		World = NewWorld
+	FLAGS.world = __import__(FLAGS.world_module)
 
 	parameters = open(FLAGS.outputdir + "parameters.log", 'w')
 	parameters.write(" ".join(sys.argv))
