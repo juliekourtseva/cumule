@@ -25,7 +25,7 @@ from pybrain.tools.validation import ModuleValidator
 PHASE_1_LENGTH = 10000
 
 # EVOLUTION_PERIOD = 2 #Evolve predictors every 10 episodes. 
-WEIGHT_DECAY=0.1
+WEIGHT_DECAY=0.02
 # MUTATE_MASK_PROBABILITY = 0.9
 BACKTIME=10
 PREDICTOR_MUTATION_PROBABILITY=0.8
@@ -34,6 +34,7 @@ PREDICTOR_MUTATION_PROBABILITY=0.8
 INITIAL_INPUT_ALL_ONES = "ones"
 INITIAL_INPUT_RANDOM = "random"
 INITIAL_INPUT_CORRECT = "correct"
+INITIAL_INPUT_WRONG = "wrong"
 AVERAGE_INPUT_BITS = 2.5
 MAX_TEST_ERROR = 10
 
@@ -73,6 +74,7 @@ parser.add_argument("--relative_error", help="use error = (state-prediction)*abs
 parser.add_argument("--reward_minimal", help="fewer input bits = higher fitness (default: False)", action="store_true", default=False)
 parser.add_argument("--plot_interval", help="number of episodes for after which predictors are plotted (default: 10)", type=int, default=10)
 parser.add_argument("--world_module", help="module from which to import world (default: world)", type=str, default="world")
+parser.add_argument("--weight_decay", help="weight decay factor (default: 0.02)", type=float, default=0.02)
 
 def list_diff(list1, list2):
 	list_out = list1[:]
@@ -102,7 +104,7 @@ class Predictor():
 		args.append(outSize)
 		kwargs = {'hiddenclass': TanhLayer, 'bias': True}
 		self.net = buildNetwork(*(tuple(args)), **kwargs)
-		self.trainer = BackpropTrainer(self.net, self.ds, learningrate=self.learning_rate, verbose = False, weightdecay=WEIGHT_DECAY)
+		self.trainer = BackpropTrainer(self.net, self.ds, learningrate=self.learning_rate, verbose = False, weightdecay=FLAGS.weight_decay)
 		self.prediction = [0] * outSize
 		self.mse = 100
 		
@@ -113,6 +115,8 @@ class Predictor():
 		#Specific to Mai's code. Make input and output masks.
 		if initial_input == INITIAL_INPUT_CORRECT:
 			self.inputMask = correct_masks[r]
+		elif initial_input == INITIAL_INPUT_WRONG:
+			self.inputMask = [x^1 for x in correct_masks[r]]
 		elif initial_input == INITIAL_INPUT_RANDOM:
 			self.inputMask = [random.randint(0, 1) for i in range(inSize)]
 		elif initial_input == INITIAL_INPUT_ALL_ONES:
@@ -394,8 +398,11 @@ class Agent():
 			p.problem=problem
 			p.outputMask = [0]*test_world.state_size
 			p.outputMask[problem]=1
-			if (FLAGS.disable_evolution or FLAGS.disable_input_mutation) and (FLAGS.initial_input == INITIAL_INPUT_CORRECT):
-				p.inputMask = test_world.correct_masks[problem]
+			if (FLAGS.disable_evolution or FLAGS.disable_input_mutation):
+				if (FLAGS.initial_input == INITIAL_INPUT_CORRECT):
+					p.inputMask = test_world.correct_masks[problem]
+				elif (FLAGS.initial_input == INITIAL_INPUT_WRONG):
+					p.inputMask = [x^1 for x in correct_masks[r]]
 			return p
 
 		def clearPredictorsData(self):
@@ -421,7 +428,7 @@ class Agent():
 			args.append(test_world.state_size)
 			kwargs = {'hiddenclass': TanhLayer, 'bias': True}
 			self.predictors[loser].net = buildNetwork(*(tuple(args)), **kwargs)
-			self.predictors[loser].trainer = BackpropTrainer(self.predictors[loser].net, self.predictors[loser].ds, learningrate=self.predictors[loser].learning_rate, verbose = False, weightdecay=WEIGHT_DECAY)
+			self.predictors[loser].trainer = BackpropTrainer(self.predictors[loser].net, self.predictors[loser].ds, learningrate=self.predictors[loser].learning_rate, verbose = False, weightdecay=FLAGS.weight_decay)
 			self.predictors[loser].outputMask = self.predictors[winner].outputMask
 
 			if FLAGS.replication:
@@ -497,7 +504,10 @@ class Cumule():
 						break
 					subplot(4, 2, i)
 					title("Problem #"+str(problem))
-					plot(range(test_set_length), distr[problem].plots)
+					try:
+						plot(range(test_set_length), distr[problem].plots)
+					except Exception, e:
+						print "Failed to plot graphs:", e.message
 				savefig("%sbest_%s.png" % (FLAGS.outputdir, fig_num))
 				shutil.move("%sbest_%s.png" % (FLAGS.outputdir, fig_num),
 							"%sbest_%s_part%s_%s.png" % (FLAGS.outputdir, itime, fig_num, FLAGS.outputdir[:-1]))
@@ -691,8 +701,7 @@ def test_distribution(distr, test_set_length, test_agent, test_world, dims):
 	#Generate random initial motor command between -1 and 1.
 	m = test_agent.getRandomMotor()
 	#Generate initial state for this motor command, and all else zero.
-	s = test_world.updateState(m)
-	err=0
+	s = test_world.resetState(m)
 
 	# clear data from previous test in predictors
 	for problem, predictors in enumerate(distr):
@@ -706,7 +715,7 @@ def test_distribution(distr, test_set_length, test_agent, test_world, dims):
 		stp1 = test_world.updateState(m)
 		inp = np.concatenate((s,m), axis = 0)
 		for problem, predictors in enumerate(distr):
-			if (problem in dims) and (len(predictors) != 0) and (predictors[0] != 0):
+			if (problem in dims) and (len(predictors) != 0):
 				test_distrib_file.write("Problem %s, num_predictors %s\n" % (problem, len(predictors)))
 				test_distrib_file.write("Predictors before: %s\n" % [p.testError for p in predictors])
 				predict_and_test(problem, predictors, test_set_length, inp, stp1, test_distrib_file)
