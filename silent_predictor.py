@@ -35,6 +35,9 @@ INITIAL_INPUT_ALL_ONES = "ones"
 INITIAL_INPUT_RANDOM = "random"
 INITIAL_INPUT_CORRECT = "correct"
 INITIAL_INPUT_WRONG = "wrong"
+INITIAL_INPUT_ZEROS = "zeros"
+INITIAL_INPUT_RANDOM_BIT = "bit"
+
 AVERAGE_INPUT_BITS = 2.5
 MAX_TEST_ERROR = 10
 
@@ -75,6 +78,8 @@ parser.add_argument("--reward_minimal", help="fewer input bits = higher fitness 
 parser.add_argument("--plot_interval", help="number of episodes for after which predictors are plotted (default: 10)", type=int, default=10)
 parser.add_argument("--world_module", help="module from which to import world (default: world)", type=str, default="world")
 parser.add_argument("--weight_decay", help="weight decay factor (default: 0.02)", type=float, default=0.02)
+parser.add_argument("--input_bit", help="in random bit input mode, set one bit only in the input mask (default: 0)", type=int, default=0)
+parser.add_argument("--plot_functions", help="plots the actual function in the range [0, 2] (default: False)", action="store_true", default=False)
 
 def list_diff(list1, list2):
 	list_out = list1[:]
@@ -121,6 +126,11 @@ class Predictor():
 			self.inputMask = [random.randint(0, 1) for i in range(inSize)]
 		elif initial_input == INITIAL_INPUT_ALL_ONES:
 			self.inputMask = [1]*inSize
+		elif initial_input == INITIAL_INPUT_ZEROS:
+			self.inputMask = [0]*inSize
+		elif initial_input == INITIAL_INPUT_RANDOM_BIT:
+			self.inputMask = [0]*inSize
+			self.inputMask[FLAGS.input_bit] = 1
 		self.trainError = 0
 		self.testError = MAX_TEST_ERROR
 		self.trainErrorHistory = []
@@ -131,11 +141,6 @@ class Predictor():
 		self.problem=r
 		self.previousData=[]
 		self.plots = []
-
-	def getPrediction(self, input):
-
-		out = self.net.activate(input)
-		return out
 
 	def trainPredictor(self):
 		new_ds=deepcopy(self.ds)
@@ -529,6 +534,35 @@ class Cumule():
 				return num_errors
 			return []
 
+		def plot_best_effort_functions(self, bestEfforts, plot_range, plot_step, itime):
+			distr = [0 for x in xrange(self.world.state_size)]
+			for problem, _, best_predictor in bestEfforts:
+				distr[problem] = best_predictor
+
+			x_values = []
+			x = plot_range[0]
+			while x < plot_range[1]:
+				x_values.append(x)
+				x += plot_step
+
+			predictions = [[] for x in x_values]
+
+			for p in distr:
+				if p == 0:
+					continue
+				for x in xrange(len(x_values)):
+					inp = [x_values[x] for i in p.inputMask]
+					predicted = p.predict_masked(inp)[p.problem]
+					predictions[x].append(predicted)
+					#p.plots.append([predicted, x])
+
+			figure()
+			plot(x_values, predictions)
+			savefig("%sbest_functions.png" % (FLAGS.outputdir))
+			shutil.move("%sbest_functions.png" % (FLAGS.outputdir),
+						"%sbest_functions_%s_%s.png" % (FLAGS.outputdir, itime, FLAGS.outputdir[:-1]))
+
+
 		def run(self, run_number, try_number):
 			logfile=open(FLAGS.outputdir+FLAGS.logfile.replace(".log", "_%s_%s_%s.log" % (run_number, try_number, FLAGS.outputdir[:-1])),'w',1)
 			errHis = []
@@ -536,7 +570,8 @@ class Cumule():
 			inputMaskErrors = [[] for x in xrange(self.world.state_size)]
 
 			m = self.agent.getRandomMotor()
-			s = self.world.updateState(m)
+			s = self.world.nextState(m)
+			self.world.updateState()
 
 			archive_changed=False
 
@@ -559,7 +594,7 @@ class Cumule():
 				logfile.write("Timestep:"+str(itime)+"\n")
 				
 				m = self.agent.getRandomMotor() 
-				s = self.world.resetState(m)
+				#s = self.world.resetState(m)
 
 				distr=self.agent.problemsDistribution(self.world.state_size)
 
@@ -575,20 +610,21 @@ class Cumule():
 						logfile.write("Best efforts: Problem %s, error %s, input mask %s\n" % (problem, err, stringify_mask(pred.inputMask)))
 
 					input_mask_error_fractions = self.plot_best_efforts(bestEfforts, FLAGS.test_set_length, itime)
+					if FLAGS.plot_functions:
+						self.plot_best_effort_functions(bestEfforts, (0, 2), 0.01, itime)
 					if FLAGS.check_input_mask:
 						for i in xrange(self.world.state_size):
 							inputMaskErrors[i].append(input_mask_error_fractions[i])
 					errHisAllTime.append(self.agent.minimumErrors(distr, FLAGS.train_error))
 
-				m = self.agent.getRandomMotor() 
-				s = self.world.resetState(m)
-
 				# training of predictors
 				for t in range(FLAGS.episode_length):#*********************************************
 					m = self.agent.getRandomMotor()
-					stp1 = self.world.updateState(m)
+					stp1 = self.world.nextState(m)
 					inp = np.concatenate((s,m), axis = 0)
-					self.agent.storeDataPoint(inp, stp1) 
+					self.agent.storeDataPoint(inp, stp1)
+					self.world.updateState()
+					s = self.world.getState()
 
 				self.agent.trainPredictors()
 				self.agent.clearPredictorsData()
@@ -701,7 +737,8 @@ def test_distribution(distr, test_set_length, test_agent, test_world, dims):
 	#Generate random initial motor command between -1 and 1.
 	m = test_agent.getRandomMotor()
 	#Generate initial state for this motor command, and all else zero.
-	s = test_world.resetState(m)
+	s = test_world.getState()
+	#s = test_world.resetState(m)
 
 	# clear data from previous test in predictors
 	for problem, predictors in enumerate(distr):
@@ -712,7 +749,8 @@ def test_distribution(distr, test_set_length, test_agent, test_world, dims):
 	test_distrib_file = open(FLAGS.outputdir + "test_distrib_%s.log" % FLAGS.outputdir[:-1], 'a')
 	for t in range(FLAGS.test_set_length):
 		m = test_agent.getRandomMotor()
-		stp1 = test_world.updateState(m)
+		s = test_world.getState()
+		stp1 = test_world.nextState(m)
 		inp = np.concatenate((s,m), axis = 0)
 		for problem, predictors in enumerate(distr):
 			if (problem in dims) and (len(predictors) != 0):
@@ -720,7 +758,8 @@ def test_distribution(distr, test_set_length, test_agent, test_world, dims):
 				test_distrib_file.write("Predictors before: %s\n" % [p.testError for p in predictors])
 				predict_and_test(problem, predictors, test_set_length, inp, stp1, test_distrib_file)
 				test_distrib_file.write("Predictors after: %s\n\n" % [p.testError for p in predictors])
-		s = stp1
+		test_world.updateState()
+		s = test_world.getState()
 	test_distrib_file.close()
 
 def predict_and_test(problem, predictors, test_set_length, inp, stp1, test_distrib_file):
@@ -732,16 +771,16 @@ def predict_and_test(problem, predictors, test_set_length, inp, stp1, test_distr
 		test_distrib_file.write("problem %s, state %s\npredictions %s\n" % (problem, stp1[problem], prediction))
 	test_distrib_file.write("\n")
 
-global_errs=[]
-def print_global_errs():
-	print "Average: "+str(np.mean(global_errs))
-	print "Standard deviation: "+str(np.std(global_errs))
-	print "Min: "+str(np.min(global_errs))
-	print "Max: "+str(np.max(global_errs))
+# global_errs=[]
+# def print_global_errs():
+# 	print "Average: "+str(np.mean(global_errs))
+# 	print "Standard deviation: "+str(np.std(global_errs))
+# 	print "Min: "+str(np.min(global_errs))
+# 	print "Max: "+str(np.max(global_errs))
 
 if __name__ == '__main__':
 	#ion()
-	atexit.register(print_global_errs)
+	#atexit.register(print_global_errs)
 
 	FLAGS=parser.parse_args()
 	if FLAGS.outputdir != "":

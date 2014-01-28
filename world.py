@@ -22,12 +22,12 @@ class World():
 		self.stp1 = [0]*NUM_DIMENSIONS #TEMPORARY STATE.
 
 	def resetState(self, m):
-		self.s = [0]*NUM_DIMENSIONS    #CURRENT STATE 
-		s = self.updateState(m)
+		self.s = [random.uniform(0,1) for x in NUM_DIMENSIONS]    #CURRENT STATE 
+		stp1 = self.nextState(m)
+		s = self.updateState()
 		return s
 
-	def updateState(self, m):
-
+	def nextState(self, m):
 		#Update each state in this weird and impenetrable manner. 
 		self.stp1[0] = math.cos(self.s[0] + m[0])
 		self.stp1[1] = math.cos(self.s[1] + m[1])
@@ -43,11 +43,14 @@ class World():
 		self.stp1[6] = p0 + p1 + p2
 		self.stp1[7] = pow(m[0], 2) + p3 + p4
 
-		#Set s to s(t+1)
-		for i in range(NUM_DIMENSIONS):
-			self.s[i] = self.stp1[i]
+		# #Set s to s(t+1)
+		# for i in range(NUM_DIMENSIONS):
+		# 	self.s[i] = self.stp1[i]
 
-		return self.s
+		return self.stp1
+
+	def updateState(self):
+		self.s = self.stp1[:]
 
 	def getState(self):
 		return self.s
