@@ -56,12 +56,12 @@ class World():
 
 
     def resetState(self, m):
-        self.s = [0]*NUM_DIMENSIONS    #CURRENT STATE 
-        s = self.updateState(m)
-        return s
+        self.s = [random.uniform(0, 1) for x in NUM_DIMENSIONS]    #CURRENT STATE 
+        s = self.nextState(m)
+		self.updateState()
+        return self.getState()
 
-
-    def updateState(self, m):
+    def nextState(self, m):
         initInput = 0
         initOutput = 0
         dimI1 = self.f1['in'].dim
@@ -69,7 +69,6 @@ class World():
         dimO1 = self.f1['out'].dim
         dimO2 = self.f2['out'].dim
         output=[]
-        self.s =self.stp1
         self.stp1=[]
 
         #input    = m+self.s[0:1]+m+self.s[1:2]+m+self.s[2:3]
@@ -115,7 +114,10 @@ class World():
             self.stp1.append(output[i])
         
         return self.stp1
-    
+
+	def updateState():
+		self.s = self.stp1[:]
+
     def getRandomMotor(self):
         return [random.uniform(0,1), random.uniform(0,1)]
     
