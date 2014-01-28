@@ -25,7 +25,7 @@ from pybrain.tools.validation import ModuleValidator
 PHASE_1_LENGTH = 10000
 
 # EVOLUTION_PERIOD = 2 #Evolve predictors every 10 episodes. 
-WEIGHT_DECAY=0.02
+WEIGHT_DECAY=0.1
 # MUTATE_MASK_PROBABILITY = 0.9
 BACKTIME=10
 PREDICTOR_MUTATION_PROBABILITY=0.8
@@ -77,7 +77,7 @@ parser.add_argument("--relative_error", help="use error = (state-prediction)*abs
 parser.add_argument("--reward_minimal", help="fewer input bits = higher fitness (default: False)", action="store_true", default=False)
 parser.add_argument("--plot_interval", help="number of episodes for after which predictors are plotted (default: 10)", type=int, default=10)
 parser.add_argument("--world_module", help="module from which to import world (default: world)", type=str, default="world")
-parser.add_argument("--weight_decay", help="weight decay factor (default: 0.02)", type=float, default=0.02)
+parser.add_argument("--weight_decay", help="weight decay factor (default: 0.02)", type=float, default=0.1)
 parser.add_argument("--input_bit", help="in random bit input mode, set one bit only in the input mask (default: 0)", type=int, default=0)
 parser.add_argument("--plot_functions", help="plots the actual function in the range [0, 2] (default: False)", action="store_true", default=False)
 
