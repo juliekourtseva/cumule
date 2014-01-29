@@ -7,6 +7,7 @@ from copy import copy,deepcopy
 import argparse
 
 import sys
+import os
 
 #FFNN supervised learning packages 
 from pybrain.supervised.trainers import BackpropTrainer
@@ -56,6 +57,7 @@ parser.add_argument("--max_hiden_layers",default=2,type=int)
 parser.add_argument("--world_file", type=str, default=None)
 parser.add_argument("--test_name",type=str)
 parser.add_argument("--fixed_structures", action="store_true", default=False)
+parser.add_argument("--outputdir", help="folder for log files (default: '')", type=str, default='')
 
 from old_world import OldWorld
 from new_world import NewWorld
@@ -192,7 +194,7 @@ class Agent():
 		def __init__(self,world):
 			self.predictors = []
 			self.world=world
-			self.archive = [None for i in self.world.state_size]
+			self.archive = [None for i in xrange(self.world.state_size)]
 			self.initialisePredictors()
 
 		def archivePredictors(self):
@@ -203,6 +205,8 @@ class Agent():
 						continue
 					if (self.archive[problem] is None) or (self.archive[problem].fitness < predictors[best].fitness):
 						self.archive[p.problem] = p
+				except:
+					pass
 
 		def unitsDistribution(self,num,layers_num):
 			per_layer=num/layers_num
@@ -305,9 +309,9 @@ class Cumule():
 			self.popFitHistory=np.ndarray((FLAGS.num_predictors,BACKTIME))*0
 			self.timestep=0
 			self.run_n=run_n
-			self.predictor_statsfile=open(FLAGS.statsname+'_predictors.csv','a',1)
-			self.archive_statsfile=open(FLAGS.statsname+'_archive.csv','a',1)
-			self.solution_statsfile=open(FLAGS.statsname+'_solution.csv','a',1)
+			self.predictor_statsfile=open(FLAGS.outputdir+FLAGS.statsname+'_predictors.csv','a',1)
+			self.archive_statsfile=open(FLAGS.outputdir+FLAGS.statsname+'_archive.csv','a',1)
+			self.solution_statsfile=open(FLAGS.outputdir+FLAGS.statsname+'_solution.csv','a',1)
 
 		def generate_test_set(self,length):
 			m = self.agent.getRandomMotor()
@@ -416,7 +420,7 @@ class Cumule():
 			self.timestep=0
 			self.agent = Agent(self.world)
 
-			logfile=open(FLAGS.logfile,'w',1)
+			logfile=open(FLAGS.outputdir+FLAGS.logfile,'w',1)
 			errHis = []
 
 			self.test_set=self.generate_test_set(FLAGS.test_set_length)
@@ -456,15 +460,23 @@ class Cumule():
 if __name__ == '__main__':
 	FLAGS=parser.parse_args()
 
-	st=open(FLAGS.statsname+'_predictors.csv',"w")
+	if (FLAGS.outputdir != "") and (FLAGS.outputdir[-1] != "/"):
+		FLAGS.outputdir += "/"
+
+	try:
+		os.mkdir(FLAGS.outputdir)
+	except:
+		pass
+
+	st=open(FLAGS.outputdir+FLAGS.statsname+'_predictors.csv',"w")
 	st.write("Run; Timestep; Predictor Number; Problem; Error; Input Mask; HiddenLayers; HiddenNeurons\n")
 	st.close()
 
-	st=open(FLAGS.statsname+'_archive.csv',"w")
+	st=open(FLAGS.outputdir+FLAGS.statsname+'_archive.csv',"w")
 	st.write("Run; Timestep; MinError\n")
 	st.close()
 
-	st=open(FLAGS.statsname+'_solution.csv',"w")
+	st=open(FLAGS.outputdir+FLAGS.statsname+'_solution.csv',"w")
 	st.write("Run; Problem; Expected; Predicted; Example\n")
 	st.close()
 
@@ -476,7 +488,7 @@ if __name__ == '__main__':
 	errs=[]
 
 	# if FLAGS.world_file!=None:
-	inp=open(FLAGS.world_file,'rb')		
+	inp=open(FLAGS.world_file,'rb')
 	world_instance=pickle.load(inp)
 	inp.close()
 
