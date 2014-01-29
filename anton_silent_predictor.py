@@ -34,7 +34,7 @@ parser.add_argument("--runs",help="number of runs(default:1)",default=1,type=int
 parser.add_argument("--epochs",help="number of epochs for each training(default:5)",default=5,type=int)
 parser.add_argument("-ts","--test_set_length",help="test set length(default:50)",default=50,type=int)
 parser.add_argument("-e","--evolution_period", help="evolution period(default:10)", type=int, default=10)
-# parser.add_argument("-a","--archive_threshold", help="threshold for getting into the archive(default: 0.02)", type=float, default=0.02)
+parser.add_argument("-a","--archive_threshold", help="threshold for getting into the archive(default: 0.0004)", type=float, default=0.0004)
 parser.add_argument("-lr","--learning_rate", help="learning rate for predictors(default: 0.01)", type=float, default=0.01)
 parser.add_argument("-r","--replication", help="enable weights replication(default: no)",action="store_true", default=False)
 parser.add_argument("-lg","--logfile", help="log file name(default: prediction.log)",type=str, default="prediction.log")
@@ -67,7 +67,7 @@ WORLD_ACTION_SIZE=0
 
 STRUCTURES = [(5,), (20,), (5, 5), (20, 20)]
 
-class Predictor(): 
+class Predictor():
 
 	def __init__(self, structure, inputMask):
 
@@ -75,7 +75,8 @@ class Predictor():
 		self.inputMask=inputMask
 		self.inSize=self.inputMask.count(1)
 
-		self.createStructure(structure)
+		self.structure = tuple(structure)
+		self.createStructure()
 
 		self.mse = 100
 		self.age=0
@@ -88,9 +89,9 @@ class Predictor():
 		self.fitness = 0
 		self.previousData=[]
 	
-	def createStructure(self,structure):
-		self.hidden_neurons=sum(structure)
-		self.hidden_layers=len(structure)
+	def createStructure(self):
+		self.hidden_neurons=sum(self.structure)
+		self.hidden_layers=len(self.structure)
 
 		self.ds = SupervisedDataSet(self.inSize, 1)
 		self.net = FeedForwardNetwork()
@@ -98,11 +99,11 @@ class Predictor():
 		inLayer=LinearLayer(self.inSize)
 		self.net.addInputModule(inLayer)
 		
-		prev_hidden_layer=TanhLayer(structure.pop(0))
+		prev_hidden_layer=TanhLayer(self.structure[0])
 		self.net.addModule(prev_hidden_layer)
 		self.net.addConnection(FullConnection(inLayer,prev_hidden_layer))
 
-		for i in structure:
+		for i in structure[1:]:
 			next_hidden_layer=TanhLayer(i)
 			self.net.addModule(next_hidden_layer)
 			self.net.addConnection(FullConnection(prev_hidden_layer,next_hidden_layer))
@@ -190,8 +191,18 @@ class Predictor():
 class Agent(): 
 		def __init__(self,world):
 			self.predictors = []
-			self.world=world			
+			self.world=world
+			self.archive = [None for i in self.world.state_size]
 			self.initialisePredictors()
+
+		def archivePredictors(self):
+			for problem, predictors in enumerate(self.problemsDistribution()):
+				try:
+					best = np.argmax([p.fitness for p in predictors])
+					if predictors[best].fitness > FLAGS.archive_threshold:
+						continue
+					if (self.archive[problem] is None) or (self.archive[problem].fitness < predictors[best].fitness):
+						self.archive[p.problem] = p
 
 		def unitsDistribution(self,num,layers_num):
 			per_layer=num/layers_num
@@ -270,6 +281,19 @@ class Agent():
 			for i in range(FLAGS.num_predictors):
 				self.predictors[i].ds.clear()
 
+		def changeTournamentLoser(self, winner, loser):
+			if FLAGS.fixed_structures:
+				if self.archive[winner.problem] is not None:
+					problem = self.predictors[loser].problem
+					structure = self.predictors[winner].structure
+					inMask = self.predictors[winner].inputMask
+				else:
+					problem = self.predictors[loser].problem
+					structure = self.predictors[winner].structure
+					inMask = self.predictors[loser].inputMask
+				self.predictors[loser] = Predictor(structure, inMask, problem)
+				self.predictors[loser].setProblem(problem)
+
 class Cumule():
 		def __init__(self, world_instance=None, run_n=1):
 
@@ -300,14 +324,13 @@ class Cumule():
 
 		def predictors_stats(self):
 			for i,p in enumerate(self.agent.predictors):
-				self.predictor_statsfile.write("{run};{timestep};{predictor_number};{problem};{error};'{inputmask}';{hiddenlayers};{hiddenneurons}\n".format(run=self.run_n, timestep=self.timestep,
-																																predictor_number=i, problem=p.problem,
-																																error=-p.fitness, inputmask="".join([str(k) for k in p.inputMask]),
-																																hiddenlayers=p.hidden_layers, hiddenneurons=p.hidden_neurons
-																																	))
+				self.predictor_statsfile.write("{run};{timestep};{predictor_number};{problem};{error};'{inputmask}';{hiddenlayers};{hiddenneurons}\n".format(
+						run=self.run_n, timestep=self.timestep, predictor_number=i, problem=p.problem, error=-p.fitness,
+						inputmask="".join([str(k) for k in p.inputMask]), hiddenlayers=p.hidden_layers, hiddenneurons=p.hidden_neurons))
 		def archive_stats(self):
 			if self.timestep>0 and (self.timestep % 3)==0:
-				self.archive_statsfile.write("{run};{timestep};{min_error}\n".format(run=self.run_n,timestep=self.timestep,min_error=self.testSolution(self.getSolution(),self.test_set)))
+				self.archive_statsfile.write("{run};{timestep};{min_error}\n".format(
+						run=self.run_n,timestep=self.timestep,min_error=self.testSolution(self.getSolution(),self.test_set)))
 
 		def getSolution(self):
 			sol=[None for i in range(WORLD_STATE_SIZE)]
@@ -343,7 +366,8 @@ class Cumule():
 					predicted=solution[i].predict(inp)
 					err+=(predicted-expected[i])**2
 					if write:
-						self.solution_statsfile.write("{run};{problem};{expected};{predicted};{example}\n".format(run=self.run_n,problem=i,expected=expected[i],predicted=predicted,example=n))
+						self.solution_statsfile.write("{run};{problem};{expected};{predicted};{example}\n".format(
+								run=self.run_n,problem=i,expected=expected[i],predicted=predicted,example=n))
 
 			return 0.5*err/len(test_set)
 
@@ -363,6 +387,30 @@ class Cumule():
 				p.setFitness(errs[num])
 
 
+		def collect_training_data(self, initialState):
+			s = initialState[:]
+			for t in range(FLAGS.episode_length):
+				m = self.agent.getRandomMotor()
+				stp1 = self.world.updateState(m)
+				inp = np.concatenate((s,m), axis = 0)
+				self.agent.storeDataPoint(inp, stp1) 
+				s = stp1
+
+		def pick_predictors(self):
+			p1 = random.randint(0, FLAGS.num_predictors-1)
+			p2 = random.randint(0, FLAGS.num_predictors-1)
+			while p1 == p2:
+				p2 = random.randint(0, FLAGS.num_predictors-1)
+			return p1, p2
+
+		def tournament(self, p1, p2):
+			if self.agent.predictors[p1].getFitness() > self.agent.predictors[p2].getFitness():
+				winner = p1
+				loser = p2
+			else:
+				winner = p2
+				loser = p1
+			return winner, loser
 
 		def run(self): 
 			self.timestep=0
@@ -384,32 +432,22 @@ class Cumule():
 					return self.testSolution(self.getSolution(),self.test_set,True)
 
 				logfile.write("Timestep:"+str(i)+"\n")
-				
-				
+
 				# training of predictors
-				for t in range(FLAGS.episode_length):#*********************************************
-
-					m = self.agent.getRandomMotor()
-					stp1 = self.world.updateState(m)
-					inp = np.concatenate((s,m), axis = 0)
-					self.agent.storeDataPoint(inp, stp1) 
-
-					s = stp1
-
-
+				self.collect_training_data(s)
 				self.agent.trainPredictors()
 				self.setFitnesses(self.generate_test_set(FLAGS.episode_length))
+				self.agent.archivePredictors()
 				self.agent.clearPredictorsData()
 				distr=self.agent.problemsDistribution()
 
-				# if i%FLAGS.evolution_period == 0:
-				# 	for predictors in distr:
-				# 		if len(predictors)>1:
-
+				if i%FLAGS.evolution_period == 0:
+					p1, p2 = self.pick_predictors()
+					winner, loser = self.tournament(p1, p2)
+					self.agent.changeTournamentLoser(winner, loser)
 
 				self.predictors_stats()
 				self.archive_stats()
-
 			
 			logfile.close()
 			self.statsfile.close()
@@ -465,9 +503,4 @@ if __name__ == '__main__':
 	if FLAGS.show_test_error:
 		# c.test_archive()
 		raw_input("Press Enter to exit")
-
-
-
-
-
 
