@@ -523,10 +523,10 @@ class Cumule():
 				nonzero = [p for p in xrange(self.world.state_size) if distr[p] != 0]
 
 				for p in xrange(self.world.state_size):
-					if distr[p] != [0]:
+					try:
 						diff = sum(list_diff(self.world.correct_masks[p], distr[p].inputMask))*1.0/len(distr[p].inputMask)
 						num_errors.append(diff)
-					else:
+					except:
 						num_errors.append(None)
 				bar(nonzero, [num_errors[n] for n in xrange(len(num_errors)) if num_errors[n] is not None])
 				savefig("%swrong_input_fractions.png" % FLAGS.outputdir)
