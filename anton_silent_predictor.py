@@ -96,29 +96,14 @@ class Predictor():
 		self.hidden_layers=len(self.structure)
 
 		self.ds = SupervisedDataSet(self.inSize, 1)
-		self.net = FeedForwardNetwork()
-		
-		inLayer=LinearLayer(self.inSize)
-		self.net.addInputModule(inLayer)
-		
-		prev_hidden_layer=TanhLayer(self.structure[0])
-		self.net.addModule(prev_hidden_layer)
-		self.net.addConnection(FullConnection(inLayer,prev_hidden_layer))
 
-		for i in structure[1:]:
-			next_hidden_layer=TanhLayer(i)
-			self.net.addModule(next_hidden_layer)
-			self.net.addConnection(FullConnection(prev_hidden_layer,next_hidden_layer))
-			prev_hidden_layer=next_hidden_layer
-		
-		outLayer=LinearLayer(1)
-		self.net.addOutputModule(outLayer)
-		self.net.addConnection(FullConnection(prev_hidden_layer,outLayer))
-		
-		self.net.sortModules()	
-
+		args = [self.inSize]
+		for hl in self.structure:
+			args.append(hl)
+		args.append(1)
+		kwargs = {'hiddenclass': TanhLayer, 'bias': True}
+		self.net = buildNetwork(*(tuple(args)), **kwargs)
 		self.trainer = BackpropTrainer(self.net, self.ds, learningrate=self.learning_rate, verbose = False, weightdecay=WEIGHT_DECAY)
-
 
 	def setProblem(self,problem):
 		self.problem=problem
@@ -172,7 +157,7 @@ class Predictor():
 		self.fitness=fitness
 
 	def storeDataPoint(self, inputA, targetA):
-		assert(len(self.prepareInput(inputA))==self.net.modulesSorted[0].dim)
+		assert(len(self.prepareInput(inputA))==self.net.modulesSorted[1].dim)
 		self.ds.addSample(self.prepareInput(inputA), self.prepareTarget(targetA))
 
 	def prepareTarget(self,targetA):
@@ -253,7 +238,7 @@ class Agent():
 				p.setProblem(cur_problem)
 				problem_distribution[cur_problem]-=1
 
-				assert(p.net.modulesSorted[0].dim==p.inputMask.count(1))
+				assert(p.net.modulesSorted[1].dim==p.inputMask.count(1))
 
 				if problem_distribution[cur_problem]==0:
 					cur_problem+=1;
