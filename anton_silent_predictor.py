@@ -174,6 +174,24 @@ class Predictor():
 	def predict(self,inputA):
 		return self.net.activate(self.prepareInput(inputA))[0]
 
+	def extractInputWeights(self, otherInputMask):
+		common_inputs = [self.inputMask[i]*otherInputMask[i] for i in xrange(len(self.inputMask))]
+		if sum(common_inputs) == 0:
+			return []
+		weights = self.net.connections[self.net['in']][0].params.reshape(self.inSize, self.structure[0])
+		weight_index = 0
+		extracted_weights = []
+		for inp in xrange(len(self.inputMask)):
+			if self.inputMask[inp] == 0:
+				extracted_weights.append(None)
+				continue
+			weight_array = weights[weight_index]
+			weight_index += 1
+			if common_inputs[inp] == 0:
+				extracted_weights.append(None)
+			else:
+				extracted_weights.append(weight_array)
+		return extracted_weights
 
 class Agent(): 
 		def __init__(self,world):
@@ -219,6 +237,11 @@ class Agent():
 
 				if FLAGS.correct_input_masks:
 					mask=self.world.input_masks()[cur_problem]
+					# in order to have at least one input to the predictor
+					# (also to avoid annoying errors)
+					if mask.count(1) == 0:
+						on_bit=random.randint(1,input_size-1)
+						mask[on_bit] = 1
 				elif FLAGS.random_input_masks:
 					on_bits=random.randint(1,input_size/2)
 					mask=[1]*on_bits
@@ -272,7 +295,7 @@ class Agent():
 
 		def changeTournamentLoser(self, winner, loser):
 			if FLAGS.fixed_structures:
-				if self.archive[winner.problem] is not None:
+				if self.archive[self.predictors[winner].problem] is not None:
 					problem = self.predictors[loser].problem
 					structure = self.predictors[winner].structure
 					inMask = self.predictors[winner].inputMask
@@ -280,7 +303,7 @@ class Agent():
 					problem = self.predictors[loser].problem
 					structure = self.predictors[winner].structure
 					inMask = self.predictors[loser].inputMask
-				self.predictors[loser] = Predictor(structure, inMask, problem)
+				self.predictors[loser] = Predictor(structure, inMask)
 				self.predictors[loser].setProblem(problem)
 
 class Cumule():
