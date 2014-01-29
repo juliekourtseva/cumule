@@ -14,7 +14,8 @@ class OldWorld(World):
 
 		#Create world data structures 
 		self.s =  [random.uniform(0,1) for i in range(NUM_DIMENSIONS)]    #CURRENT STATE 
-		self.stp1 =  [random.uniform(0,1) for i in range(NUM_DIMENSIONS)] #TEMPORARY STATE. 
+		self.stp1 =  [random.uniform(0,1) for i in range(NUM_DIMENSIONS)] #TEMPORARY STATE.
+		self.masks = self.initialise_masks()
 
 	def resetState(self, m):
 		self.s =  [random.uniform(0,1) for i in range(NUM_DIMENSIONS)]    #CURRENT STATE 
@@ -75,6 +76,70 @@ class OldWorld(World):
 		self.stp1[49] = math.exp(- pow(m[0]-0.7,2)/(2*pow(10,-3))) - math.exp(- pow(m[1]-0.1,2)/(2*pow(10,-4)))
 
 		return self.stp1
+
+	def initialise_masks(self):
+		masks = [[0 for x in xrange(self.state_size+self.action_size)] for y in xrange(self.state_size)]
+		M0 = self.state_size
+		M1 = M0+1
+		nonzero_inputs = [[M0],
+						  [0, 3],
+						  [4],
+						  [M0, M1],
+						  [M0, M1],
+						  [M0, M1],
+						  [],
+						  [0, M1],
+						  [M0],
+						  [M0, M1],
+						  [M0],
+						  [10, 13],
+						  [14],
+						  [M0, M1],
+						  [M0, M1],
+						  [M0, M1],
+						  [],
+						  [1, 10],
+						  [M0],
+						  [M0, M1],
+						  [M0],
+						  [20, 23],
+						  [24],
+						  [M0, M1],
+						  [M0, M1],
+						  [M0, M1],
+						  [],
+						  [20, M1],
+						  [M0],
+						  [M0, M1],
+						  [M0],
+						  [30, 33],
+						  [34],
+						  [M0, M1],
+						  [M0, M1],
+						  [M0, M1],
+						  [],
+						  [30, M1],
+						  [M0],
+						  [M0, M1],
+						  [M0],
+						  [40, 43],
+						  [44],
+						  [M0, M1],
+						  [M0, M1],
+						  [M0, M1],
+						  [],
+						  [40, M1],
+						  [M0],
+						  [M0, M1]]
+		assert len(nonzero_inputs) == self.state_size
+		for i in xrange(self.state_size):
+			nonzero = nonzero_inputs[i]
+			for j in nonzero:
+				masks[i][j] = 1
+		return masks
+
+	def input_masks(self):
+		return self.masks
 
 	def getState(self):
 		return self.s
