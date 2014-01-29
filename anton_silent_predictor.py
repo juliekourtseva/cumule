@@ -28,7 +28,7 @@ BACKTIME=10
 PREDICTOR_MUTATION_PROBABILITY=0.8
 
 parser = argparse.ArgumentParser()
-parser.add_argument("timelimit",default=50,type=int)
+parser.add_argument("--timelimit",default=50,type=int)
 parser.add_argument("-n","--num_predictors",help="population size(default:50)",default=50,type=int)
 parser.add_argument("--runs",help="number of runs(default:1)",default=1,type=int)
 parser.add_argument("--epochs",help="number of epochs for each training(default:5)",default=5,type=int)
@@ -55,6 +55,7 @@ parser.add_argument("--max_hidden_units",default=50,type=int)
 parser.add_argument("--max_hiden_layers",default=2,type=int)
 parser.add_argument("--world_file", type=str, default=None)
 parser.add_argument("--test_name",type=str)
+parser.add_argument("--fixed_structures", action="store_true", default=False)
 
 from old_world import OldWorld
 from new_world import NewWorld
@@ -64,7 +65,7 @@ FLAGS={}
 WORLD_STATE_SIZE=0
 WORLD_ACTION_SIZE=0
 
-
+STRUCTURES = [(5,), (20,), (5, 5), (20, 20)]
 
 class Predictor(): 
 
@@ -75,7 +76,6 @@ class Predictor():
 		self.inSize=self.inputMask.count(1)
 
 		self.createStructure(structure)
-
 
 		self.mse = 100
 		self.age=0
@@ -102,7 +102,6 @@ class Predictor():
 		self.net.addModule(prev_hidden_layer)
 		self.net.addConnection(FullConnection(inLayer,prev_hidden_layer))
 
-		
 		for i in structure:
 			next_hidden_layer=TanhLayer(i)
 			self.net.addModule(next_hidden_layer)
@@ -231,7 +230,11 @@ class Agent():
 				hidden_units=random.randint(FLAGS.max_hiden_layers,FLAGS.max_hidden_units)
 				hidden_layers=random.randint(1,FLAGS.max_hiden_layers)
 
-				p=Predictor(self.unitsDistribution(hidden_units,hidden_layers),mask)
+				if FLAGS.fixed_structures:
+					p=Predictor(STRUCTURES[random.randint(0, len(STRUCTURES)-1)], mask)
+				else:
+					p=Predictor(self.unitsDistribution(hidden_units,hidden_layers),mask)
+
 				p.setProblem(cur_problem)
 				problem_distribution[cur_problem]-=1
 
@@ -413,11 +416,8 @@ class Cumule():
 
 
 if __name__ == '__main__':
-
 	FLAGS=parser.parse_args()
 
-
-	
 	st=open(FLAGS.statsname+'_predictors.csv',"w")
 	st.write("Run; Timestep; Predictor Number; Problem; Error; Input Mask; HiddenLayers; HiddenNeurons\n")
 	st.close()
@@ -429,9 +429,6 @@ if __name__ == '__main__':
 	st=open(FLAGS.statsname+'_solution.csv',"w")
 	st.write("Run; Problem; Expected; Predicted; Example\n")
 	st.close()
-
-
-
 
 	fl=vars(FLAGS)
 	for k in sorted(fl.iterkeys()):
@@ -454,7 +451,6 @@ if __name__ == '__main__':
 	# exit()
 	# else:
 	# 	world_instance=None
-
 
 	for i in range(FLAGS.runs):
 		c = Cumule(world_instance,i)
