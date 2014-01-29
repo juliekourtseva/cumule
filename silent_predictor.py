@@ -270,7 +270,7 @@ class Agent():
 				else:
 					error=5
 
-				r.append(error)	
+				r.append(math.log(error))
 
 
 			return r
@@ -656,7 +656,7 @@ class Cumule():
 					title('Minimum errors on outputs')
 					plot(errHisAllTime)
 					xlabel('%s*episodes (all time)' % FLAGS.plot_interval)
-					ylabel('errors')
+					ylabel('log(errors)')
 
 					fig=subplot(2, 2, 2)
 					fig.clear()
