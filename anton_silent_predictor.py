@@ -18,8 +18,6 @@ from pybrain.tools.validation import ModuleValidator
 from pybrain.structure import FeedForwardNetwork
 from pybrain.structure import FullConnection
 
-
-
 #5th January 2014. Cumule Algorithm (Chrisantha Fernando)
 
 PHASE_1_LENGTH = 100000
@@ -58,6 +56,7 @@ parser.add_argument("--world_file", type=str, default=None)
 parser.add_argument("--test_name",type=str)
 parser.add_argument("--fixed_structures", action="store_true", default=False)
 parser.add_argument("--outputdir", help="folder for log files (default: '')", type=str, default='')
+parser.add_argument("--use_common_weights", help="only copy weights from the same inputs (default: False)", action="store_true", default=False)
 
 from old_world import OldWorld
 from new_world import NewWorld
@@ -68,6 +67,78 @@ WORLD_STATE_SIZE=0
 WORLD_ACTION_SIZE=0
 
 STRUCTURES = [(5,), (20,), (5, 5), (20, 20)]
+
+def getAllInputWeights(net):
+	return net.connections[net['in']][0].params.reshape(
+		net['in'].dim, net['hidden0'].dim)
+
+def copyInputWeights(selfNet, otherNet, selfInputMask, otherInputMask, use_common_weights=False):
+	"""Copies input weights from otherNet to selfNet """
+	all_weights = getAllInputWeights(otherNet)
+	param_range = getInputMaskParamRange(selfNet)
+	param_shape = (selfNet['in'].dim, selfNet['hidden0'].dim)
+	if use_common_weights:
+		common_weights = extractCommonInputWeights(all_weights, otherInputMask, selfInputMask)
+		if len(common_weights) == 0:
+			return selfNet
+		weights = []
+		for inp in xrange(len(selfInputMask)):
+			if (selfInputMask[inp] == 1):
+				weights.append(common_weights[inp])
+		weights = np.array(weights)
+	else:
+		weights = all_weights
+	trunc_weights = truncateParams(weights, (min(
+				sum(selfInputMask), sum(otherInputMask)), min(
+				selfNet['hidden0'].dim, otherNet['hidden0'].dim)))
+	replaceNetParams(selfNet, param_range, param_shape, trunc_weights)
+
+def extractCommonInputWeights(weights, selfInputMask, otherInputMask):
+	common_inputs = [selfInputMask[i]*otherInputMask[i] for i in xrange(len(selfInputMask))]
+	if sum(common_inputs) == 0:
+		return np.zeros(0)
+	weight_index = 0
+	extracted_weights = []
+	for inp in xrange(len(selfInputMask)):
+		if selfInputMask[inp] == 0:
+			extracted_weights.append(None)
+			continue
+		weight_array = weights[weight_index]
+		weight_index += 1
+		if common_inputs[inp] == 0:
+			extracted_weights.append(None)
+		else:
+			extracted_weights.append(weight_array)
+	return np.array(extracted_weights)
+
+def getInputMaskParamRange(net):
+	input_start = 0
+	input_params_length = net.connections[net['in']][0].paramdim
+	if net['bias'] is None:
+		return (input_start, input_params_length)
+
+	for conn in net.connections[net['bias']]:
+		input_start += conn.paramdim
+	return (input_start, input_start+input_params_length)
+
+def truncateParams(params_array, trunc_size):
+	new_array = np.zeros(trunc_size)
+	for i in xrange(trunc_size[0]):
+		if params_array[i] is not None:
+			new_array[i] = np.copy(params_array[i][:trunc_size[1]])
+		else:
+			new_array[i] = None
+	return new_array
+
+def replaceNetParams(net, param_range, param_shape, new_params):
+	net_params = np.copy(net.params)
+	offset = param_range[0]
+	for row in xrange(min(param_shape[0], new_params.shape[0])):
+		if not math.isnan(new_params[row][0]):
+			length = min(param_shape[1], new_params.shape[1])
+			net_params[offset:offset+length] = new_params[row][:length]
+		offset += param_shape[1]
+	net._setParameters(net_params)
 
 class Predictor():
 
@@ -173,25 +244,6 @@ class Predictor():
 
 	def predict(self,inputA):
 		return self.net.activate(self.prepareInput(inputA))[0]
-
-	def extractInputWeights(self, otherInputMask):
-		common_inputs = [self.inputMask[i]*otherInputMask[i] for i in xrange(len(self.inputMask))]
-		if sum(common_inputs) == 0:
-			return []
-		weights = self.net.connections[self.net['in']][0].params.reshape(self.inSize, self.structure[0])
-		weight_index = 0
-		extracted_weights = []
-		for inp in xrange(len(self.inputMask)):
-			if self.inputMask[inp] == 0:
-				extracted_weights.append(None)
-				continue
-			weight_array = weights[weight_index]
-			weight_index += 1
-			if common_inputs[inp] == 0:
-				extracted_weights.append(None)
-			else:
-				extracted_weights.append(weight_array)
-		return extracted_weights
 
 class Agent(): 
 		def __init__(self,world):
