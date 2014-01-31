@@ -1,4 +1,5 @@
 import math
+import random
 
 class StructureProbabilities(object):
 	def __init__(self, num_problems, num_hidden_layers, default_means=[5, 0], default_sds=[4, 1]):
@@ -13,16 +14,35 @@ class StructureProbabilities(object):
 			self.distributions.append(hl_probs)
 
 	def get_mu_sigma(self, problem, hidden_layer):
-		return [None, None]
+		return self.distributions[problem][hidden_layer]
 
-	def set_mu_sigma(self, problem, hidden_layer):
-		return [None, None]
+	def set_mu_sigma(self, problem, hidden_layer, mu, sigma):
+		self.distributions[problem][hidden_layer] = [mu, sigma]
 
-	def update_probabilities(self, structure, problem, change_towards):
-		pass
+	def update_probabilities(self, structure, problem, is_winner):
+		for hl, num_units in enumerate(structure):
+			mu, sigma = self.get_mu_sigma(problem, hl)
+			new_mu, new_sigma = self.update_probability(num_units, mu, sigma, is_winner)
+			self.set_mu_sigma(problem, hl, new_mu, new_sigma)
 
-	def update_probability(self, value, mu, sigma, change_towards):
-		return [None, None]
+	def update_probability(self, num, mu, sigma, is_winner):
+		diff = num-mu
+		signdiff = -1 if (diff < 0) else 1
+		diff_sd = max(abs(diff), sigma*0.1)
+		if is_winner:
+			new_mu = mu + (signdiff*diff_sd)
+			new_sigma = sigma/(1 + 2.0/((100*diff_sd)+1))
+		else:
+			new_mu = mu - (signdiff*diff_sd)
+			new_sigma = sigma*(1 + 1.0/((100*diff_sd)+1))
+		if new_mu < 0:
+			new_mu = 0
+		return new_mu, new_sigma
 
 	def get_sample(self, problem, layer):
-		return None
+		mu, sigma = self.get_mu_sigma(problem, layer)
+		sample = int(math.floor(random.gauss(mu, sigma)))
+		min_sample = 1 if layer == 0 else 0
+		if sample < min_sample:
+			sample = min_sample
+		return sample
