@@ -254,14 +254,13 @@ class Agent():
 
 		def archivePredictors(self):
 			for problem, predictors in enumerate(self.problemsDistribution()):
-				try:
-					best = np.argmax([p.fitness for p in predictors])
-					if predictors[best].fitness > FLAGS.archive_threshold:
-						continue
-					if (self.archive[problem] is None) or (self.archive[problem].fitness < predictors[best].fitness):
-						self.archive[p.problem] = p
-				except:
-					pass
+				if len(predictors) == 0:
+					continue
+				best = np.argmin([p.error for p in predictors])
+				if predictors[best].error > FLAGS.archive_threshold:
+					continue
+				if (self.archive[problem] is None) or (self.archive[problem].error > predictors[best].error):
+					self.archive[p.problem] = p
 
 		def unitsDistribution(self,num,layers_num):
 			per_layer=num/layers_num
@@ -435,7 +434,7 @@ class Cumule():
 
 			return 0.5*err/len(test_set)
 
-		def setFitnesses(self, test_set):
+		def setErrors(self, test_set):
 			errs=[0.0]*FLAGS.num_predictors
 			for sample in test_set:
 				inp=sample[0]
@@ -445,11 +444,17 @@ class Cumule():
 					predicted=p.predict(inp)
 					errs[num]+=(predicted-outp[p.problem])**2
 
-			errs=np.multiply(errs,-0.5/len(test_set))
+			errs=np.multiply(errs,0.5/len(test_set))
+			for num, p in enumerate(self.agent.predictors):
+				p.error = errs[num]
 
-			for num,p in enumerate(self.agent.predictors):
-				p.setFitness(errs[num])
-
+		def setFitnesses(self, test_set):
+			for problem, predictors in enumerate(self.agent.problemsDistribution()):
+				if len(predictors) == 0:
+					continue
+				best = np.argmin([p.error for p in predictors])
+				for p in predictors:
+					p.setFitness(predictors[best].error/p.error)
 
 		def collect_training_data(self, initialState):
 			s = initialState[:]
@@ -500,12 +505,13 @@ class Cumule():
 				# training of predictors
 				self.collect_training_data(s)
 				self.agent.trainPredictors()
-				self.setFitnesses(self.generate_test_set(FLAGS.episode_length))
-				self.agent.archivePredictors()
 				self.agent.clearPredictorsData()
-				distr=self.agent.problemsDistribution()
+				#distr=self.agent.problemsDistribution()
 
 				if i%FLAGS.evolution_period == 0:
+					self.setErrors(self.generate_test_set(FLAGS.episode_length))
+					self.setFitnesses()
+					self.agent.archivePredictors()
 					p1, p2 = self.pick_predictors()
 					winner, loser = self.tournament(p1, p2)
 					self.agent.changeTournamentLoser(winner, loser)
