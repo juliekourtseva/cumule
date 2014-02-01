@@ -38,5 +38,5 @@ if __name__ == '__main__':
 	masks = get_masks(lines, num_dim, num_motors)
 	print "["
 	for m in masks:
-		print ",".join([str(x) for x in m])+","
+		print "["+",".join([str(x) for x in m])+"],"
 	print "]"

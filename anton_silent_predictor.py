@@ -24,7 +24,6 @@ from pybrain.structure import FullConnection
 
 PHASE_1_LENGTH = 100000
 
-WEIGHT_DECAY=0.1
 BACKTIME=10
 PREDICTOR_MUTATION_PROBABILITY=0.8
 
@@ -37,17 +36,17 @@ parser.add_argument("-ts","--test_set_length",help="test set length(default:50)"
 parser.add_argument("-e","--evolution_period", help="evolution period(default:10)", type=int, default=10)
 parser.add_argument("-a","--archive_threshold", help="threshold for getting into the archive(default: 0.0004)", type=float, default=0.0004)
 parser.add_argument("-lr","--learning_rate", help="learning rate for predictors(default: 0.01)", type=float, default=0.01)
-parser.add_argument("-r","--replication", help="enable weights replication(default: no)",action="store_true", default=False)
+#parser.add_argument("-r","--replication", help="enable weights replication(default: no)",action="store_true", default=False)
 parser.add_argument("-lg","--logfile", help="log file name(default: prediction.log)",type=str, default="prediction.log")
 parser.add_argument("-s","--statsname", help="stats file name(default: )",type=str, default="")
-parser.add_argument("-i","--mutate_input", help="enable input mask mutation(default: yes)",action="store_true", default=True)
+parser.add_argument("-i","--mutate_input", help="enable input mask mutation(default: yes)",action="store_true", default=False)
 parser.add_argument("--episode_length", help="number of samples per episode(default: 50)", type=int, default=10)
 parser.add_argument("--show_test_error", help="test archive and show the plot", action="store_true",default=False)
 parser.add_argument("--show_plots", help="show live plots", action="store_true",default=False)
 parser.add_argument("--sliding_training", help="use sliding window of examples", action="store_true",default=False)
 parser.add_argument("--input_mutation_prob", help="input mutation probability per bit(default: 0.05)", type=float, default=0.05)
 parser.add_argument("--output_mutation_prob", help="output mutation probability per mask(default: 0.9)", type=float, default=0.9)
-parser.add_argument("--replication_prob", help="weight copy probability per weight(default: 0.1)", type=float, default=0.1)
+#parser.add_argument("--replication_prob", help="weight copy probability per weight(default: 0.1)", type=float, default=0.1)
 parser.add_argument("--predictor_mutation_prob", help="tournament loser mutation probability(default: 1)", type=float, default=1.0)
 parser.add_argument("--random_input_masks", help="initialise population with random input masks(default:False)", action="store_true",default=False)
 parser.add_argument("--correct_input_masks", help="supply predictors with correct masks(default:False)", action="store_true",default=False)
@@ -62,9 +61,7 @@ parser.add_argument("--use_common_weights", help="only copy weights from the sam
 parser.add_argument("--disable_structure_mutation", help="switch off mutation of structures (default: False)", action="store_true", default=False)
 parser.add_argument("--structure_mutation_prob", help="probability of mutation per hidden layer (default: 0.1)", type=float, default=0.1)
 parser.add_argument("--disable_structure_evolution", help="switch off evolution of structures (default: False)", action="store_true", default=False)
-
-from old_world import OldWorld
-from new_world import NewWorld
+parser.add_argument("--weight_decay", help="weight decay factor (default: 0.0)", type=float, default=0.0)
 
 FLAGS={}
 
@@ -179,7 +176,7 @@ class Predictor():
 		args.append(1)
 		kwargs = {'hiddenclass': TanhLayer, 'bias': True}
 		self.net = buildNetwork(*(tuple(args)), **kwargs)
-		self.trainer = BackpropTrainer(self.net, self.ds, learningrate=self.learning_rate, verbose = False, weightdecay=WEIGHT_DECAY)
+		self.trainer = BackpropTrainer(self.net, self.ds, learningrate=self.learning_rate, verbose = False, weightdecay=FLAGS.weight_decay)
 
 	def setProblem(self,problem):
 		self.problem=problem
@@ -270,7 +267,7 @@ class Agent():
 				if predictors[best].error > FLAGS.archive_threshold:
 					continue
 				if (self.archive[problem] is None) or (self.archive[problem].error > predictors[best].error):
-					self.archive[p.problem] = p
+					self.archive[problem] = predictors[best]
 
 		def unitsDistribution(self,num,layers_num):
 			per_layer=num/layers_num
@@ -372,7 +369,9 @@ class Agent():
 			new_structure = []
 			for hl in xrange(FLAGS.max_hidden_layers):	
 				if random.uniform(0, 1) < FLAGS.structure_mutation_prob:
-					new_structure.append(self.structure_probs.get_sample(problem, hl))
+					sample = self.structure_probs.get_sample(problem, hl)
+					if sample > 0:
+						new_structure.append(sample)
 				else:
 					if len(structure) > hl:
 						new_structure.append(structure[hl])
@@ -393,6 +392,7 @@ class Cumule():
 			self.run_n=run_n
 			self.predictor_statsfile=open(FLAGS.outputdir+FLAGS.statsname+'_predictors.csv','a',1)
 			self.archive_statsfile=open(FLAGS.outputdir+FLAGS.statsname+'_archive.csv','a',1)
+			self.structure_statsfile=open(FLAGS.outputdir+FLAGS.statsname+'_structure.csv','a',1)
 			self.solution_statsfile=open(FLAGS.outputdir+FLAGS.statsname+'_solution.csv','a',1)
 
 		def generate_test_set(self,length):
@@ -410,13 +410,23 @@ class Cumule():
 
 		def predictors_stats(self):
 			for i,p in enumerate(self.agent.predictors):
-				self.predictor_statsfile.write("{run};{timestep};{predictor_number};{problem};{error};'{inputmask}';{hiddenlayers};{hiddenneurons}\n".format(
-						run=self.run_n, timestep=self.timestep, predictor_number=i, problem=p.problem, error=-p.fitness,
-						inputmask="".join([str(k) for k in p.inputMask]), hiddenlayers=p.hidden_layers, hiddenneurons=p.hidden_neurons))
+				self.predictor_statsfile.write("{run};{timestep};{predictor_number};{problem};{error};{fitness};'{inputmask}';{structure}\n".format(
+						run=self.run_n, timestep=self.timestep, predictor_number=i, problem=p.problem, error=p.error, fitness=p.fitness,
+						inputmask="".join([str(k) for k in p.inputMask]), structure=p.structure))
+
 		def archive_stats(self):
-			if self.timestep>0 and (self.timestep % 3)==0:
-				self.archive_statsfile.write("{run};{timestep};{min_error}\n".format(
-						run=self.run_n,timestep=self.timestep,min_error=self.testSolution(self.getSolution(),self.test_set)))
+			for p in self.agent.archive:
+				if p is None:
+					continue
+				self.archive_statsfile.write("{run};{timestep};{problem};{error};{fitness};{structure}\n".format(
+						run=self.run_n,timestep=self.timestep,problem=p.problem, error=p.error, fitness=p.fitness, structure=p.structure))
+
+		def structure_probability_stats(self):
+			for problem in xrange(self.world.state_size):
+				for hl in xrange(FLAGS.max_hidden_layers):
+					mu, sigma = self.agent.structure_probs.get_mu_sigma(problem, hl)
+					self.structure_statsfile.write("{run};{timestep};{problem};{hidden_layer};{mu};{sigma}".format(
+							run=self.run_n,timestep=self.timestep,problem=problem, hidden_layer=hl, mu=mu, sigma=sigma))
 
 		def getSolution(self):
 			sol=[None for i in range(WORLD_STATE_SIZE)]
@@ -515,15 +525,15 @@ class Cumule():
 
 
 			m = self.agent.getRandomMotor()
-			s = self.world.resetState(m)
+			s = self.world.resetState()
 
 			for itime in range(PHASE_1_LENGTH):
 				self.timestep+=1
 				
 				if self.timestep==FLAGS.timelimit+1 and FLAGS.timelimit!=-1:
-					return self.testSolution(self.getSolution(),self.test_set,True)
+					return self.testSolution(self.agent.archive,self.test_set,True)
 
-				logfile.write("Timestep:"+str(i)+"\n")
+				logfile.write("Timestep:"+str(itime)+"\n")
 
 				# training of predictors
 				self.collect_training_data(s)
@@ -533,19 +543,26 @@ class Cumule():
 
 				if itime%FLAGS.evolution_period == 0:
 					self.setErrors(self.generate_test_set(FLAGS.episode_length))
-					self.setFitnesses()
+					self.setFitnesses(self.test_set)
 					self.agent.archivePredictors()
-					p1, p2 = self.pick_predictors()
-					winner, loser = self.tournament(p1, p2)
+					# pick 2 predictors in such a way as to avoid overwriting
+					# the loser if it is in the archive (e.g. if both predictors
+					# are the best).
+					loser_archived = True
+					winner = loser = None
+					while loser_archived:
+						p1, p2 = self.pick_predictors()
+						winner, loser = self.tournament(p1, p2)
+						loser_archived = (self.agent.archive[self.agent.predictors[loser].problem] ==
+										  self.agent.predictors[loser])
 					if not FLAGS.disable_structure_evolution:
 						self.agent.changeTournamentLoser(winner, loser)
 
-				self.predictors_stats()
-				self.archive_stats()
+					self.predictors_stats()
+					self.archive_stats()
+					self.structure_probability_stats()
 			
 			logfile.close()
-			self.statsfile.close()
-
 
 if __name__ == '__main__':
 	FLAGS=parser.parse_args()
