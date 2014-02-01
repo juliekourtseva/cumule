@@ -399,10 +399,10 @@ class Cumule():
 			self.popFitHistory=np.ndarray((FLAGS.num_predictors,BACKTIME))*0
 			self.timestep=0
 			self.run_n=run_n
-			self.predictor_statsfile=open(FLAGS.outputdir+FLAGS.statsname+'_predictors.csv','a',1)
-			self.archive_statsfile=open(FLAGS.outputdir+FLAGS.statsname+'_archive.csv','a',1)
-			self.structure_statsfile=open(FLAGS.outputdir+FLAGS.statsname+'_structure.csv','a',1)
-			self.solution_statsfile=open(FLAGS.outputdir+FLAGS.statsname+'_solution.csv','a',1)
+			self.predictor_statsfile=open(FLAGS.outputdir+FLAGS.outputdir.replace("/", "")+'_predictors.csv','a',1)
+			self.archive_statsfile=open(FLAGS.outputdir+FLAGS.outputdir.replace("/", "")+'_archive.csv','a',1)
+			self.structure_statsfile=open(FLAGS.outputdir+FLAGS.outputdir.replace("/", "")+'_structure.csv','a',1)
+			self.solution_statsfile=open(FLAGS.outputdir+FLAGS.outputdir.replace("/", "")+'_solution.csv','a',1)
 
 		def generate_test_set(self,length):
 			m = self.agent.getRandomMotor()
