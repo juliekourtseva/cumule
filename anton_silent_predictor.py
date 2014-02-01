@@ -9,6 +9,8 @@ import argparse
 import sys
 import os
 
+from structure_probabilities import StructureProbabilities
+
 #FFNN supervised learning packages 
 from pybrain.supervised.trainers import BackpropTrainer
 from pybrain.tools.shortcuts import buildNetwork
@@ -51,12 +53,15 @@ parser.add_argument("--random_input_masks", help="initialise population with ran
 parser.add_argument("--correct_input_masks", help="supply predictors with correct masks(default:False)", action="store_true",default=False)
 parser.add_argument("--fixed_hidden_layer",default=None,type=int)
 parser.add_argument("--max_hidden_units",default=50,type=int)
-parser.add_argument("--max_hiden_layers",default=2,type=int)
-parser.add_argument("--world_file", type=str, default=None)
+parser.add_argument("--max_hidden_layers",default=2,type=int)
+parser.add_argument("--world_module", type=str, default="world")
 parser.add_argument("--test_name",type=str)
 parser.add_argument("--fixed_structures", action="store_true", default=False)
 parser.add_argument("--outputdir", help="folder for log files (default: '')", type=str, default='')
 parser.add_argument("--use_common_weights", help="only copy weights from the same inputs (default: False)", action="store_true", default=False)
+parser.add_argument("--disable_structure_mutation", help="switch off mutation of structures (default: False)", action="store_true", default=False)
+parser.add_argument("--structure_mutation_prob", help="probability of mutation per hidden layer (default: 0.1)", type=float, default=0.1)
+parser.add_argument("--disable_structure_evolution", help="switch off evolution of structures (default: False)", action="store_true", default=False)
 
 from old_world import OldWorld
 from new_world import NewWorld
@@ -250,6 +255,11 @@ class Agent():
 			self.predictors = []
 			self.world=world
 			self.archive = [None for i in xrange(self.world.state_size)]
+			if not FLAGS.disable_structure_mutation:
+				self.structure_probs = StructureProbabilities(self.world.state_size, FLAGS.max_hidden_layers,
+															  default_means=[5, 0], default_sds=[4, 1])
+			else:
+				self.structure_probs = None
 			self.initialisePredictors()
 
 		def archivePredictors(self):
@@ -301,8 +311,8 @@ class Agent():
 				else:
 					mask = [1 for i in range(input_size)]
 
-				hidden_units=random.randint(FLAGS.max_hiden_layers,FLAGS.max_hidden_units)
-				hidden_layers=random.randint(1,FLAGS.max_hiden_layers)
+				hidden_units=random.randint(FLAGS.max_hidden_layers,FLAGS.max_hidden_units)
+				hidden_layers=random.randint(1,FLAGS.max_hidden_layers)
 
 				if FLAGS.fixed_structures:
 					p=Predictor(STRUCTURES[random.randint(0, len(STRUCTURES)-1)], mask)
@@ -345,17 +355,30 @@ class Agent():
 				self.predictors[i].ds.clear()
 
 		def changeTournamentLoser(self, winner, loser):
-			if FLAGS.fixed_structures:
-				if self.archive[self.predictors[winner].problem] is not None:
-					problem = self.predictors[loser].problem
-					structure = self.predictors[winner].structure
-					inMask = self.predictors[winner].inputMask
+			structure = self.predictors[winner].structure
+			if self.archive[self.predictors[winner].problem] == self.predictors[winner]:
+				problem = self.predictors[loser].problem
+				inMask = self.predictors[winner].inputMask
+			else:
+				problem = self.predictors[loser].problem
+				inMask = self.predictors[loser].inputMask
+
+			if not FLAGS.disable_structure_mutation:
+				self.structure_probs.update_probabilities(
+					self.predictors[loser].structure, self.predictors[loser].problem, is_winner=False)
+				self.structure_probs.update_probabilities(
+					self.predictors[winner].structure, self.predictors[winner].problem, is_winner=True)
+
+			new_structure = []
+			for hl in xrange(FLAGS.max_hidden_layers):	
+				if random.uniform(0, 1) < FLAGS.structure_mutation_prob:
+					new_structure.append(self.structure_probs.get_sample(problem, hl))
 				else:
-					problem = self.predictors[loser].problem
-					structure = self.predictors[winner].structure
-					inMask = self.predictors[loser].inputMask
-				self.predictors[loser] = Predictor(structure, inMask)
-				self.predictors[loser].setProblem(problem)
+					if len(structure) > hl:
+						new_structure.append(structure[hl])
+
+			self.predictors[loser] = Predictor(new_structure, inMask)
+			self.predictors[loser].setProblem(problem)
 
 class Cumule():
 		def __init__(self, world_instance=None, run_n=1):
@@ -494,7 +517,7 @@ class Cumule():
 			m = self.agent.getRandomMotor()
 			s = self.world.resetState(m)
 
-			for i in range(PHASE_1_LENGTH):
+			for itime in range(PHASE_1_LENGTH):
 				self.timestep+=1
 				
 				if self.timestep==FLAGS.timelimit+1 and FLAGS.timelimit!=-1:
@@ -508,13 +531,14 @@ class Cumule():
 				self.agent.clearPredictorsData()
 				#distr=self.agent.problemsDistribution()
 
-				if i%FLAGS.evolution_period == 0:
+				if itime%FLAGS.evolution_period == 0:
 					self.setErrors(self.generate_test_set(FLAGS.episode_length))
 					self.setFitnesses()
 					self.agent.archivePredictors()
 					p1, p2 = self.pick_predictors()
 					winner, loser = self.tournament(p1, p2)
-					self.agent.changeTournamentLoser(winner, loser)
+					if not FLAGS.disable_structure_evolution:
+						self.agent.changeTournamentLoser(winner, loser)
 
 				self.predictors_stats()
 				self.archive_stats()
@@ -553,13 +577,10 @@ if __name__ == '__main__':
 	avg=0.0
 	errs=[]
 
-	# if FLAGS.world_file!=None:
-	inp=open(FLAGS.world_file,'rb')
-	world_instance=pickle.load(inp)
-	inp.close()
-
-	WORLD_STATE_SIZE=world_instance.__class__.state_size
-	WORLD_ACTION_SIZE=world_instance.__class__.action_size
+	# # if FLAGS.world_file!=None:
+	# inp=open(FLAGS.world_file,'rb')
+	# world_instance=pickle.load(inp)
+	# inp.close()
 
 	# a=Agent()
 	# a.initialisePredictors()
@@ -567,6 +588,11 @@ if __name__ == '__main__':
 	# exit()
 	# else:
 	# 	world_instance=None
+
+	world = __import__(FLAGS.world_module)
+	world_instance = world.World()
+	WORLD_STATE_SIZE=world_instance.__class__.state_size
+	WORLD_ACTION_SIZE=world_instance.__class__.action_size
 
 	for i in range(FLAGS.runs):
 		c = Cumule(world_instance,i)
