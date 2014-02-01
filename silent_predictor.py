@@ -270,8 +270,11 @@ class Agent():
 				else:
 					error=5
 
-				r.append(math.log(error))
-
+				try:
+					r.append(math.log(error))
+				except:
+					print "problem %s has problematic error: %s" % (problem, error)
+					r.append(math.log(error + 1.0e-10))
 
 			return r
 
@@ -460,16 +463,19 @@ class Agent():
 				self.predictors[loser].outputMask[r] = 1
 				self.predictors[loser].problem=r
 				if (FLAGS.initial_input == INITIAL_INPUT_CORRECT):
-					self.predictors[loser].inputMask = test_world.correct_masks[r]
+					self.predictors[loser].inputMask = test_world.input_masks()[r]
 
 class Cumule():
 		def __init__(self):
-			self.world = FLAGS.world.World()
+			try:
+				self.world = FLAGS.world.OldWorld()
+			except:
+				self.world = FLAGS.world.World()
 
 			predictors = [Predictor(self.world.state_size + self.world.action_size,
 									self.world.state_size, FLAGS.learning_rate,
 									FLAGS.hidden_layer_number, FLAGS.hidden_layer_size,
-									FLAGS.initial_input, self.world.correct_masks
+									FLAGS.initial_input, self.world.input_masks()
 									) for p in xrange(FLAGS.num_predictors)]
 			self.agent = Agent(predictors)
 			self.popFitHistory=np.ndarray((FLAGS.num_predictors,BACKTIME))*0
@@ -524,7 +530,7 @@ class Cumule():
 
 				for p in xrange(self.world.state_size):
 					try:
-						diff = sum(list_diff(self.world.correct_masks[p], distr[p].inputMask))*1.0/len(distr[p].inputMask)
+						diff = sum(list_diff(self.world.input_masks()[p], distr[p].inputMask))*1.0/len(distr[p].inputMask)
 						num_errors.append(diff)
 					except:
 						num_errors.append(None)
