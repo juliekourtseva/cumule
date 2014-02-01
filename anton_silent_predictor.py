@@ -425,7 +425,7 @@ class Cumule():
 			for problem in xrange(self.world.state_size):
 				for hl in xrange(FLAGS.max_hidden_layers):
 					mu, sigma = self.agent.structure_probs.get_mu_sigma(problem, hl)
-					self.structure_statsfile.write("{run};{timestep};{problem};{hidden_layer};{mu};{sigma}".format(
+					self.structure_statsfile.write("{run};{timestep};{problem};{hidden_layer};{mu};{sigma}\n".format(
 							run=self.run_n,timestep=self.timestep,problem=problem, hidden_layer=hl, mu=mu, sigma=sigma))
 
 		def getSolution(self):
