@@ -14,10 +14,11 @@ class World(object):
 	state_size=NUM_DIMENSIONS
 	action_size=NUM_MOTORS
 
-	def __init__(self):
+	def __init__(self, noise_level=0.0):
 		#Create world data structures 
 		self.s =  [random.uniform(0,1) for i in range(NUM_DIMENSIONS)]    #CURRENT STATE 
 		self.stp1 =  [random.uniform(0,1) for i in range(NUM_DIMENSIONS)] #TEMPORARY STATE.
+		self.noise_level = noise_level
 
 	def resetState(self):
 		self.s =  [random.uniform(0,1) for i in range(NUM_DIMENSIONS)]    #CURRENT STATE 
@@ -79,6 +80,10 @@ class World(object):
 		self.stp1[47] =  exp(10*(self.s[43]-1))
 		self.stp1[48] =  2*exp(-(m[0]-0.5)**(2/(2*10**-2)))-1
 		self.stp1[49] = exp(-(m[0]-0.7)**(2/(2*10**-3)))-exp(-(m[1]-0.1)**(2/(2*10**-4)))
+
+		if self.noise_level > 0.0:
+			for i in xrange(NUM_DIMENSIONS):
+				self.stp1 += (random.uniform(0, 1)*self.noise_level)
 		return self.stp1
 
 	def input_masks(self):

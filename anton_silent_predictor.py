@@ -62,6 +62,8 @@ parser.add_argument("--disable_structure_mutation", help="switch off mutation of
 parser.add_argument("--structure_mutation_prob", help="probability of mutation per hidden layer (default: 0.1)", type=float, default=0.1)
 parser.add_argument("--disable_structure_evolution", help="switch off evolution of structures (default: False)", action="store_true", default=False)
 parser.add_argument("--weight_decay", help="weight decay factor (default: 0.0)", type=float, default=0.0)
+parser.add_argument("--prob_structures", help="initialise predictors based on structure probability distribution (default: False)", action="store_true", default=True)
+parser.add_argument("--noise_level", help="maximum allowed noise (default: 0.0)", type=float, default=0.0)
 
 FLAGS={}
 
@@ -313,6 +315,13 @@ class Agent():
 
 				if FLAGS.fixed_structures:
 					p=Predictor(STRUCTURES[random.randint(0, len(STRUCTURES)-1)], mask)
+				elif FLAGS.prob_structures:
+					pred_structure = []
+					for hl in xrange(FLAGS.max_hidden_layers):
+						sample = self.structure_probs.get_sample(cur_problem, hl)
+						if sample > 0:
+							pred_structure.append(sample)
+					p=Predictor(pred_structure, mask)
 				else:
 					p=Predictor(self.unitsDistribution(hidden_units,hidden_layers),mask)
 
