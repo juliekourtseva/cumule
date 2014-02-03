@@ -2,7 +2,10 @@ import math
 import random
 
 class StructureProbabilities(object):
-	def __init__(self, num_problems, num_hidden_layers, default_means=[5, 0], default_sds=[4, 1]):
+	def __init__(self, num_problems, num_hidden_layers, default_means=[5, 0], default_sds=[4, 1], diff_factor=0.3, diff_limit=1.5):
+		self.diff_factor = diff_factor
+		# diff limit in terms of standard deviations
+		self.diff_limit = diff_limit
 		if len(default_means) < num_hidden_layers:
 			raise Exception("Not enough default values for mean and standard deviation")
 		self.distributions = []
@@ -28,11 +31,12 @@ class StructureProbabilities(object):
 	def update_probability(self, num, mu, sigma, is_winner):
 		diff = num-mu
 		signdiff = -1 if (diff < 0) else 1
-		diff_sd = max(abs(diff), sigma*0.1)
 		if is_winner:
+			diff_sd = min(self.diff_factor*abs(diff), sigma*self.diff_limit)
 			new_mu = mu + (signdiff*diff_sd)
 			new_sigma = sigma/(1 + 2.0/((100*diff_sd)+1))
 		else:
+			diff_sd = max(self.diff_factor*abs(diff), sigma*self.diff_limit)
 			new_mu = mu - (signdiff*diff_sd)
 			new_sigma = sigma*(1 + 1.0/((100*diff_sd)+1))
 		if new_mu < 0:

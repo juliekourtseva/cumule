@@ -62,8 +62,10 @@ parser.add_argument("--disable_structure_mutation", help="switch off mutation of
 parser.add_argument("--structure_mutation_prob", help="probability of mutation per hidden layer (default: 0.1)", type=float, default=0.1)
 parser.add_argument("--disable_structure_evolution", help="switch off evolution of structures (default: False)", action="store_true", default=False)
 parser.add_argument("--weight_decay", help="weight decay factor (default: 0.0)", type=float, default=0.0)
-parser.add_argument("--prob_structures", help="initialise predictors based on structure probability distribution (default: False)", action="store_true", default=True)
+parser.add_argument("--prob_structures", help="initialise predictors based on structure probability distribution (default: False)", action="store_true", default=False)
 parser.add_argument("--noise_level", help="maximum allowed noise (default: 0.0)", type=float, default=0.0)
+parser.add_argument("--diff_factor", help="factor for multiplying (mean-number) in structure probability distribution (default: 0.3)", type=float, default=0.3)
+parser.add_argument("--diff_limit", help="factor for multiplying sigma as a limit on diff in structure probability distribution (default: 1.5)", type=float, default=1.5)
 
 FLAGS={}
 
@@ -256,7 +258,8 @@ class Agent():
 			self.archive = [None for i in xrange(self.world.state_size)]
 			if not FLAGS.disable_structure_mutation:
 				self.structure_probs = StructureProbabilities(self.world.state_size, FLAGS.max_hidden_layers,
-															  default_means=[5, 0], default_sds=[4, 1])
+															  default_means=[5, 0], default_sds=[4, 1],
+															  diff_factor=FLAGS.diff_factor, diff_limit=FLAGS.diff_limit)
 			else:
 				self.structure_probs = None
 			self.initialisePredictors()
@@ -496,7 +499,14 @@ class Cumule():
 					continue
 				best = np.argmin([p.error for p in predictors])
 				for p in predictors:
-					p.setFitness(predictors[best].error/p.error)
+					if p == predictors[best]:
+						p.setFitness(1.0)
+					else:
+						best_error = predictors[best].error
+						if best_error == 0.0:
+							# lowest non-zero power of 10
+							best_error = 1.0e-323
+						p.setFitness(predictors[best].error/p.error)
 
 		def collect_training_data(self, initialState):
 			s = initialState[:]
@@ -584,16 +594,20 @@ if __name__ == '__main__':
 	except:
 		pass
 
-	st=open(FLAGS.outputdir+FLAGS.statsname+'_predictors.csv',"w")
-	st.write("Run; Timestep; Predictor Number; Problem; Error; Input Mask; HiddenLayers; HiddenNeurons\n")
+	st=open(FLAGS.outputdir+FLAGS.outputdir.replace("/", "")+'_predictors.csv',"w")
+	st.write("{run};{timestep};{predictor_number};{problem};{error};{fitness};'{inputmask}';{structure}\n")
 	st.close()
 
-	st=open(FLAGS.outputdir+FLAGS.statsname+'_archive.csv',"w")
-	st.write("Run; Timestep; MinError\n")
+	st=open(FLAGS.outputdir+FLAGS.outputdir.replace("/", "")+'_archive.csv',"w")
+	st.write("{run};{timestep};{problem};{error};{fitness};{structure}\n")
 	st.close()
 
-	st=open(FLAGS.outputdir+FLAGS.statsname+'_solution.csv',"w")
-	st.write("Run; Problem; Expected; Predicted; Example\n")
+	st=open(FLAGS.outputdir+FLAGS.outputdir.replace("/", "")+'_solution.csv',"w")
+	st.write("{run};{problem};{expected};{predicted};{example}\n")
+	st.close()
+
+	st=open(FLAGS.outputdir+FLAGS.outputdir.replace("/", "")+'_structure.csv',"w")
+	st.write("{run};{timestep};{problem};{hidden_layer};{mu};{sigma}\n")
 	st.close()
 
 	fl=vars(FLAGS)
@@ -619,6 +633,10 @@ if __name__ == '__main__':
 	world_instance = world.World()
 	WORLD_STATE_SIZE=world_instance.__class__.state_size
 	WORLD_ACTION_SIZE=world_instance.__class__.action_size
+
+	parameters = open(FLAGS.outputdir + "parameters.log", 'w')
+	parameters.write(" ".join(sys.argv))
+	parameters.write("\n")
 
 	for i in range(FLAGS.runs):
 		c = Cumule(world_instance,i)

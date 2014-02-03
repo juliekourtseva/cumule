@@ -38,7 +38,7 @@ def plot_structure(struct_file):
 	plots_split = defaultdict(dict)
 	with open(struct_file, 'r') as f:
 		data = f.readlines()
-	data = [d.split(";") for d in data if ";" in d]
+	data = [d.split(";") for d in data[1:] if ";" in d]
 	data = [[float(x) for x in d] for d in data]
 	timesteps = []
 	max_hidden_layer = None
@@ -81,6 +81,7 @@ def plot_structure(struct_file):
 			title("Problem #"+str(prob))
 			try:
 				plot(plots[prob][0], plots[prob][1])
+				ylim((-1, max([max(y) for y in plots[prob][1]])+1))
 			except Exception, e:
 				print "Failed to plot graphs:", e.message
 			savefig("%s.png" % (struct_file.replace(".csv", "_%s" % fig_num)))
@@ -102,7 +103,7 @@ def plot_archive(arch_file):
 		if error > 0:
 			err_plots[problem][timestep] = math.log(error, 10)
 		else:
-			err_plots[problem][timestep] = -10
+			err_plots[problem][timestep] = -323
 		exec "structure = %s" % structure
 		if (max_hidden_layers is None) or (len(structure) > max_hidden_layers):
 			max_hidden_layers = len(structure)
@@ -164,6 +165,7 @@ def plot_archive(arch_file):
 			ylim((-1, max_num_units+1))
 			try:
 				plot(struct_plots_sorted[prob][0], struct_plots_sorted[prob][1])
+				ylim((-1, max([max(y) for y in struct_plots_sorted[prob][1]])+1))
 			except Exception, e:
 				print "Failed to plot graphs:", e.message
 			savefig("%s.png" % (arch_file.replace(".csv", "_%s_struct" % fig_num)))
